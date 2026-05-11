@@ -4,6 +4,8 @@ An example application demonstrating how to build with [Interhuman AI's](https:/
 
 ![PitchPerfect Screenshot](screenshot.png)
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FInterhumanAI%2Finterhuman-example-pitch&project-name=interhuman-example-pitch&repository-name=interhuman-example-pitch&env=INTERHUMAN_API_KEY&envDescription=Your%20Interhuman%20API%20key%20is%20required%20for%20pitch%20analysis.%20Supabase%20vars%20are%20optional%20for%20the%20leaderboard.&envLink=https%3A%2F%2Fdocs.interhuman.ai%2Fhow-to%2Fget-api-key)
+
 ## Features
 
 - **Pitch Recording & Analysis**: Record your pitch and get AI-powered feedback on delivery
@@ -175,6 +177,12 @@ Founders who reframe prevention questions with promotion-focused answers raise 7
 ## Deployment
 
 ### Vercel (Recommended)
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FInterhumanAI%2Finterhuman-example-pitch&project-name=interhuman-example-pitch&repository-name=interhuman-example-pitch&env=INTERHUMAN_API_KEY&envDescription=Your%20Interhuman%20API%20key%20is%20required%20for%20pitch%20analysis.%20Supabase%20vars%20are%20optional%20for%20the%20leaderboard.&envLink=https%3A%2F%2Fdocs.interhuman.ai%2Fhow-to%2Fget-api-key)
+
+The deploy flow prompts for `INTERHUMAN_API_KEY`, which is required for pitch analysis. Add the optional Supabase variables later if you want persistent leaderboard data.
+
+#### Manual import
 
 1. Push your code to GitHub
 2. Import the repo in [Vercel](https://vercel.com)
