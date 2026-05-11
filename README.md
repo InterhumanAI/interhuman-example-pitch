@@ -96,12 +96,17 @@ The app works without Supabase - you just won't have a persistent leaderboard.
 2. Go to **Project Settings → API**
 3. Copy the **Project URL** and **publishable** key (`sb_publishable_...`) to your `.env`
 4. Copy the **secret** key (`sb_secret_...`) to `SUPABASE_SERVICE_ROLE_KEY` (keep this server-side only)
+5. Copy the **database password** from **Project Settings → Database** to `SUPABASE_DB_PASSWORD` for local setup
 
 ### 2. Create Database Tables
 
-1. Go to **SQL Editor** in your Supabase dashboard
-2. Create a new query
-3. Copy the contents of `supabase/schema.sql` and run it
+Run the schema locally:
+
+```bash
+npm run db:setup
+```
+
+Or apply it manually in the Supabase SQL Editor by running `supabase/schema.sql`.
 
 ## Project Structure
 

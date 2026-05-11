@@ -61,3 +61,8 @@ CREATE INDEX "PitchScore_visitorId_compositeScore_idx" ON "PitchScore"("visitorI
 CREATE INDEX "PitchScore_createdAt_idx" ON "PitchScore"("createdAt");
 CREATE INDEX "PitchScore_mode_compositeScore_idx" ON "PitchScore"("mode", "compositeScore" DESC);
 ALTER TABLE "PitchScore" ADD CONSTRAINT "PitchScore_pitchId_fkey" FOREIGN KEY ("pitchId") REFERENCES "Pitch"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, service_role;
+GRANT ALL ON TYPE "PitchMode" TO postgres, service_role;
