@@ -38,7 +38,7 @@ An example application demonstrating how to build with [Interhuman AI's](https:/
 ### Prerequisites
 
 - Node.js 18+
-- [Interhuman AI](https://interhuman.ai) API credentials
+- [Interhuman AI](https://interhuman.ai) API key ([get one](https://docs.interhuman.ai/how-to/get-api-key))
 - [Supabase](https://supabase.com) account (optional, for leaderboard)
 
 ### Installation
@@ -67,16 +67,14 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `INTERHUMAN_KEY_ID` | Yes | Your Interhuman Key ID |
-| `INTERHUMAN_KEY_SECRET` | Yes | Your Interhuman Key Secret |
+| `INTERHUMAN_API_KEY` | Yes | Your Interhuman API key (server-side only; do not use `NEXT_PUBLIC_*`) |
 | `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase project URL (for leaderboard) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Supabase anon/public key |
 | `SUPABASE_SERVICE_ROLE_KEY` | No | Supabase service role key |
 
 Example `.env`:
 ```env
-INTERHUMAN_KEY_ID=your_key_id
-INTERHUMAN_KEY_SECRET=your_key_secret
+INTERHUMAN_API_KEY=your_api_key
 
 # Optional - for leaderboard persistence
 NEXT_PUBLIC_SUPABASE_URL=https://abc123.supabase.co
@@ -148,14 +146,13 @@ The app uses Interhuman AI's video analysis API to detect social signals and cal
 const response = await fetch("https://api.interhuman.ai/v1/upload/analyze", {
   method: "POST",
   headers: {
-    "X-API-Key-Id": process.env.INTERHUMAN_KEY_ID,
-    "X-API-Key-Secret": process.env.INTERHUMAN_KEY_SECRET,
+    Authorization: `Bearer ${process.env.INTERHUMAN_API_KEY}`,
   },
   body: formData, // Contains the video file
 });
 
 const analysis = await response.json();
-// Returns: engagement_states, signals
+// Returns: engagement_state, signals
 ```
 
 The API returns:
