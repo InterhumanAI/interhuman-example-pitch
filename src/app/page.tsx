@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Header } from "@/components/header";
+import { APP_NAME } from "@/lib/brand";
 import { VERCEL_DEPLOY_URL } from "@/lib/deploy";
 import {
   Video,
@@ -175,7 +176,7 @@ export default function HomePage() {
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-primary" />
-              <span className="font-semibold">PitchPerfect</span>
+              <span className="font-semibold">{APP_NAME}</span>
             </div>
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
               <Link href="/privacy" className="hover:text-primary transition-colors">

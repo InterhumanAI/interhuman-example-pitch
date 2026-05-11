@@ -2,6 +2,7 @@ import { Metadata } from "next";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Trophy } from "lucide-react";
+import { APP_NAME } from "@/lib/brand";
 
 interface SharePageProps {
   params: Promise<{ id: string }>;
@@ -31,14 +32,14 @@ export async function generateMetadata({ params }: SharePageProps): Promise<Meta
 
   if (!data) {
     return {
-      title: "PitchPerfect - Practice Your Pitch",
+      title: `${APP_NAME} - Practice Your Pitch`,
       description: "Practice and perfect your investor pitch with AI-powered feedback.",
     };
   }
 
   const imageUrl = `/api/share/image?score=${data.score}&percentile=${data.percentile}&name=${encodeURIComponent(data.userName)}&authority=${data.authority}&clarity=${data.clarity}&energy=${data.energy}&confidence=${data.confidence}&mode=${data.mode}`;
 
-  const title = `${data.userName} scored ${data.score} on PitchPerfect using Interhuman AI's social signal analysis API!`;
+  const title = `${data.userName} scored ${data.score} on ${APP_NAME} using Interhuman AI's social signal analysis API!`;
   const description = `Top ${Math.max(1, 100 - data.percentile)}% of founders.`;
 
   return {
@@ -77,7 +78,7 @@ export default async function SharePage({ params }: SharePageProps) {
           <h1 className="text-2xl font-bold mb-4">Invalid Share Link</h1>
           <p className="text-muted-foreground mb-6">This share link is invalid or has expired.</p>
           <Button asChild>
-            <Link href="/">Try PitchPerfect</Link>
+            <Link href="/">Try {APP_NAME}</Link>
           </Button>
         </div>
       </div>
@@ -99,7 +100,7 @@ export default async function SharePage({ params }: SharePageProps) {
           <Button variant="ghost" size="sm" asChild>
             <Link href="/" className="gap-2">
               <ArrowLeft className="w-4 h-4" />
-              Try PitchPerfect
+              Try {APP_NAME}
             </Link>
           </Button>
         </div>

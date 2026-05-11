@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Badge } from "@/types";
+import { APP_NAME } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 
@@ -120,7 +121,7 @@ export function ShareImagePreview({
 
   const handleShareLinkedIn = () => {
     const shareUrl = generateSharePageUrl();
-    const text = `I just scored ${score} on my pitch practice with PitchPerfect! 🎯 Top ${Math.max(1, 100 - percentile)}% of founders using Interhuman AI's social signal analysis API.\n\n${shareUrl}`;
+    const text = `I just scored ${score} on my pitch practice with ${APP_NAME}! 🎯 Top ${Math.max(1, 100 - percentile)}% of founders using Interhuman AI's social signal analysis API.\n\n${shareUrl}`;
     // Use LinkedIn's post creation URL which supports pre-filled text
     const linkedInUrl = `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(text)}`;
     window.open(linkedInUrl, "_blank", "width=600,height=600");
@@ -128,7 +129,7 @@ export function ShareImagePreview({
 
   const handleShareTwitter = () => {
     const shareUrl = generateSharePageUrl();
-    const text = `I just scored ${score} on my pitch practice with PitchPerfect using Interhuman AI's social signal analysis API! 🎯 Top ${Math.max(1, 100 - percentile)}% of founders.`;
+    const text = `I just scored ${score} on my pitch practice with ${APP_NAME} using Interhuman AI's social signal analysis API! 🎯 Top ${Math.max(1, 100 - percentile)}% of founders.`;
     const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`;
     window.open(twitterUrl, "_blank", "width=600,height=400");
   };

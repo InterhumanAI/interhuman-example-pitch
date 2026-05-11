@@ -8,4 +8,4 @@ const envLink = encodeURIComponent(
   "https://docs.interhuman.ai/how-to/get-api-key"
 );
 
-export const VERCEL_DEPLOY_URL = `https://vercel.com/new/clone?repository-url=${repositoryUrl}&project-name=interhuman-example-pitch&repository-name=interhuman-example-pitch&env=INTERHUMAN_API_KEY&envDescription=${envDescription}&envLink=${envLink}`;
+export const VERCEL_DEPLOY_URL = `https://vercel.com/new/clone?repository-url=${repositoryUrl}&project-name=the-pitch-practice&repository-name=the-pitch-practice&env=INTERHUMAN_API_KEY&envDescription=${envDescription}&envLink=${envLink}`;

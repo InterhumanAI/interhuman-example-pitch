@@ -1,10 +1,10 @@
-# PitchPerfect - AI-Powered Investor Pitch Practice
+# The Pitch Practice - AI-Powered Investor Pitch Practice
 
 An example application demonstrating how to build with [Interhuman AI's](https://interhuman.ai) social signal analysis API. This app helps founders practice their investor pitches with real-time feedback on confidence, clarity, energy, and more.
 
-![PitchPerfect Screenshot](screenshot.png)
+![The Pitch Practice Screenshot](screenshot.png)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FInterhumanAI%2Finterhuman-example-pitch&project-name=interhuman-example-pitch&repository-name=interhuman-example-pitch&env=INTERHUMAN_API_KEY&envDescription=Your%20Interhuman%20API%20key%20is%20required%20for%20pitch%20analysis.%20Supabase%20vars%20are%20optional%20for%20the%20leaderboard.&envLink=https%3A%2F%2Fdocs.interhuman.ai%2Fhow-to%2Fget-api-key)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FInterhumanAI%2Finterhuman-example-pitch&project-name=the-pitch-practice&repository-name=the-pitch-practice&env=INTERHUMAN_API_KEY&envDescription=Your%20Interhuman%20API%20key%20is%20required%20for%20pitch%20analysis.%20Supabase%20vars%20are%20optional%20for%20the%20leaderboard.&envLink=https%3A%2F%2Fdocs.interhuman.ai%2Fhow-to%2Fget-api-key)
 
 ## Features
 
@@ -47,7 +47,7 @@ An example application demonstrating how to build with [Interhuman AI's](https:/
 
 1. Install dependencies:
 ```bash
-cd interhuman-example-pitch
+cd the-pitch-practice
 npm install
 ```
 
@@ -73,10 +73,12 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 | `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase project URL (for leaderboard) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Supabase anon/public key |
 | `SUPABASE_SERVICE_ROLE_KEY` | No | Supabase service role key |
+| `NEXT_PUBLIC_APP_URL` | No | Public site URL used for share links and metadata |
 
 Example `.env`:
 ```env
 INTERHUMAN_API_KEY=your_api_key
+NEXT_PUBLIC_APP_URL=https://thepitchpractice.com
 
 # Optional - for leaderboard persistence
 NEXT_PUBLIC_SUPABASE_URL=https://abc123.supabase.co
@@ -178,7 +180,7 @@ Founders who reframe prevention questions with promotion-focused answers raise 7
 
 ### Vercel (Recommended)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FInterhumanAI%2Finterhuman-example-pitch&project-name=interhuman-example-pitch&repository-name=interhuman-example-pitch&env=INTERHUMAN_API_KEY&envDescription=Your%20Interhuman%20API%20key%20is%20required%20for%20pitch%20analysis.%20Supabase%20vars%20are%20optional%20for%20the%20leaderboard.&envLink=https%3A%2F%2Fdocs.interhuman.ai%2Fhow-to%2Fget-api-key)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FInterhumanAI%2Finterhuman-example-pitch&project-name=the-pitch-practice&repository-name=the-pitch-practice&env=INTERHUMAN_API_KEY&envDescription=Your%20Interhuman%20API%20key%20is%20required%20for%20pitch%20analysis.%20Supabase%20vars%20are%20optional%20for%20the%20leaderboard.&envLink=https%3A%2F%2Fdocs.interhuman.ai%2Fhow-to%2Fget-api-key)
 
 The deploy flow prompts for `INTERHUMAN_API_KEY`, which is required for pitch analysis. Add the optional Supabase variables later if you want persistent leaderboard data.
 
@@ -187,7 +189,7 @@ The deploy flow prompts for `INTERHUMAN_API_KEY`, which is required for pitch an
 1. Push your code to GitHub
 2. Import the repo in [Vercel](https://vercel.com)
 3. Add your environment variables in Vercel's dashboard
-4. Update `NEXT_PUBLIC_APP_URL` to your production URL
+4. Set `NEXT_PUBLIC_APP_URL` to your production URL (for example, `https://thepitchpractice.com`)
 
 ## License
 

@@ -1,5 +1,6 @@
 import { ImageResponse } from "@vercel/og";
 import { NextRequest } from "next/server";
+import { APP_NAME } from "@/lib/brand";
 
 export const runtime = "edge";
 
@@ -61,7 +62,7 @@ export async function GET(request: NextRequest) {
                 color: "#ffffff",
               }}
             >
-              🎯 PitchPerfect
+              🎯 {APP_NAME}
             </div>
             <div
               style={{
@@ -200,7 +201,7 @@ export async function GET(request: NextRequest) {
               color: "#ffffff",
             }}
           >
-            🎯 PitchPerfect
+            🎯 {APP_NAME}
           </div>
           <div
             style={{

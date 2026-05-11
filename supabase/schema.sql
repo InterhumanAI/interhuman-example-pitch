@@ -1,4 +1,4 @@
--- PitchPerfect Database Schema (Simplified)
+-- The Pitch Practice Database Schema (Simplified)
 -- Run this in Supabase SQL Editor to create all tables
 
 -- CreateEnum

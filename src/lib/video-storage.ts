@@ -1,6 +1,8 @@
 "use client";
 
-const DB_NAME = "pitchperfect-videos";
+import { VIDEO_STORAGE_DB_NAME } from "@/lib/brand";
+
+const DB_NAME = VIDEO_STORAGE_DB_NAME;
 const DB_VERSION = 1;
 const STORE_NAME = "videos";
 
