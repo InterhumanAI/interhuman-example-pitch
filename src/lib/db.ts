@@ -10,9 +10,10 @@ let supabaseAdmin: SupabaseClient | null = null;
 
 if (supabaseUrl && supabaseAnonKey) {
   supabase = createClient(supabaseUrl, supabaseAnonKey);
-  supabaseAdmin = supabaseServiceKey
-    ? createClient(supabaseUrl, supabaseServiceKey)
-    : supabase;
+}
+
+if (supabaseUrl && supabaseServiceKey) {
+  supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 }
 
 // Helper to get supabase client with error handling
@@ -25,14 +26,16 @@ export function getSupabase(): SupabaseClient {
 
 export function getSupabaseAdmin(): SupabaseClient {
   if (!supabaseAdmin) {
-    throw new Error("Supabase is not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY");
+    throw new Error(
+      "Supabase admin client is not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
+    );
   }
   return supabaseAdmin;
 }
 
 // Check if Supabase is configured
 export function isSupabaseConfigured(): boolean {
-  return Boolean(supabaseUrl && supabaseAnonKey);
+  return Boolean(supabaseUrl && supabaseAnonKey && supabaseServiceKey);
 }
 
 // Export for backward compatibility (but may be null)

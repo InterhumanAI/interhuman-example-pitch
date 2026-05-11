@@ -71,8 +71,8 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 |----------|----------|-------------|
 | `INTERHUMAN_API_KEY` | Yes | Your Interhuman API key (server-side only; do not use `NEXT_PUBLIC_*`) |
 | `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase project URL (for leaderboard) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Supabase anon/public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | No | Supabase service role key |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Supabase publishable key (`sb_publishable_...`) |
+| `SUPABASE_SERVICE_ROLE_KEY` | No | Supabase secret key (`sb_secret_...`; server-side only) |
 | `NEXT_PUBLIC_APP_URL` | No | Public site URL used for share links and metadata |
 
 Example `.env`:
@@ -81,9 +81,9 @@ INTERHUMAN_API_KEY=your_api_key
 NEXT_PUBLIC_APP_URL=https://thepitchpractice.com
 
 # Optional - for leaderboard persistence
-NEXT_PUBLIC_SUPABASE_URL=https://abc123.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_your_publishable_key_here
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_your_secret_key_here
 ```
 
 ## Supabase Setup (Optional)
@@ -94,8 +94,8 @@ The app works without Supabase - you just won't have a persistent leaderboard.
 
 1. Go to [supabase.com](https://supabase.com) and create a free project
 2. Go to **Project Settings → API**
-3. Copy the **Project URL** and **anon public** key to your `.env`
-4. Copy the **service_role** key to your `.env` (keep this secret!)
+3. Copy the **Project URL** and **publishable** key (`sb_publishable_...`) to your `.env`
+4. Copy the **secret** key (`sb_secret_...`) to `SUPABASE_SERVICE_ROLE_KEY` (keep this server-side only)
 
 ### 2. Create Database Tables
 
