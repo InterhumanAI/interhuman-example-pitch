@@ -6,6 +6,7 @@ import { APP_NAME } from "@/lib/brand";
 import { VERCEL_DEPLOY_URL } from "@/lib/deploy";
 import {
   Video,
+  Timer,
   Trophy,
   TrendingUp,
   Sparkles,
@@ -15,6 +16,7 @@ import {
   Users,
   Zap,
   CheckCircle,
+  ArrowRight,
 } from "lucide-react";
 
 export default function HomePage() {
@@ -49,6 +51,12 @@ export default function HomePage() {
                   Record Your Pitch
                 </Link>
               </Button>
+              <Button size="xl" variant="outline" asChild>
+                <Link href="/challenge" className="gap-2">
+                  <Timer className="w-5 h-5" />
+                  1-Minute Challenge
+                </Link>
+              </Button>
             </div>
           </div>
         </section>
@@ -64,7 +72,7 @@ export default function HomePage() {
                 {
                   icon: Video,
                   title: "1. Record",
-                  desc: "Record your pitch using your webcam and practice at your own pace.",
+                  desc: "Record your pitch using your webcam. Practice your full pitch or take the 1-minute challenge.",
                 },
                 {
                   icon: BarChart3,
@@ -74,7 +82,7 @@ export default function HomePage() {
                 {
                   icon: Trophy,
                   title: "3. Improve",
-                  desc: "Get actionable feedback and track how your delivery improves over time.",
+                  desc: "Get actionable feedback, earn badges, and track your progress on the leaderboard.",
                 },
               ].map((item, i) => (
                 <Card key={i} className="text-center border-0 shadow-none bg-secondary/30">
@@ -165,6 +173,39 @@ export default function HomePage() {
                   </CardContent>
                 </Card>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* 1-Minute Challenge CTA */}
+        <section className="py-16 bg-primary text-primary-foreground">
+          <div className="container mx-auto px-4 text-center">
+            <Timer className="w-12 h-12 mx-auto mb-4 opacity-90" />
+            <h2 className="text-3xl font-bold mb-4">
+              Take the 1-Minute Challenge
+            </h2>
+            <p className="text-lg opacity-90 mb-8 max-w-lg mx-auto">
+              Can you deliver a compelling pitch in exactly 60 seconds? Compete
+              with other founders and climb the leaderboard.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Button size="lg" variant="secondary" asChild>
+                <Link href="/challenge" className="gap-2">
+                  Start Challenge
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                asChild
+                className="bg-transparent border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10"
+              >
+                <Link href="/leaderboard" className="gap-2">
+                  <Trophy className="w-4 h-4" />
+                  View Leaderboard
+                </Link>
+              </Button>
             </div>
           </div>
         </section>
