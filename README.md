@@ -4,7 +4,7 @@ An example application demonstrating how to build with [Interhuman AI's](https:/
 
 ![The Pitch Practice Screenshot](screenshot.png)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FInterhumanAI%2Finterhuman-example-pitch&project-name=the-pitch-practice&repository-name=the-pitch-practice&env=INTERHUMAN_API_KEY&envDescription=Your%20Interhuman%20API%20key%20is%20required%20for%20pitch%20analysis.%20Supabase%20vars%20are%20optional%20for%20the%20leaderboard.&envLink=https%3A%2F%2Fdocs.interhuman.ai%2Fhow-to%2Fget-api-key)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FInterhumanAI%2Finterhuman-example-pitch&project-name=the-pitch-practice&repository-name=the-pitch-practice&env=INTERHUMAN_API_KEY&env=NEXT_PUBLIC_SUPABASE_URL&env=NEXT_PUBLIC_SUPABASE_ANON_KEY&env=SUPABASE_SERVICE_ROLE_KEY&envDescription=INTERHUMAN_API_KEY%20is%20required.%20For%20the%20leaderboard%2C%20set%20all%20three%20Supabase%20variables%20and%20apply%20supabase%2Fschema.sql%20in%20the%20Supabase%20SQL%20Editor%2C%20then%20redeploy%20Production.&envLink=https%3A%2F%2Fdocs.interhuman.ai%2Fhow-to%2Fget-api-key)
 
 ## Features
 
@@ -70,9 +70,9 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `INTERHUMAN_API_KEY` | Yes | Your Interhuman API key (server-side only; do not use `NEXT_PUBLIC_*`) |
-| `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase project URL (for leaderboard) |
+| `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase project URL (for leaderboard; required together with the next two) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Supabase publishable key (`sb_publishable_...`) |
-| `SUPABASE_SERVICE_ROLE_KEY` | No | Supabase secret key (`sb_secret_...`; server-side only) |
+| `SUPABASE_SERVICE_ROLE_KEY` | No | Supabase secret key (`sb_secret_...`; server-side only; omitting it disables the leaderboard) |
 | `NEXT_PUBLIC_APP_URL` | No | Public site URL used for share links and metadata |
 
 Example `.env`:
@@ -85,6 +85,8 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_your_publishable_key_here
 SUPABASE_SERVICE_ROLE_KEY=sb_secret_your_secret_key_here
 ```
+
+For production variable names only, see [`.env.production.example`](.env.production.example).
 
 ## Supabase Setup (Optional)
 
@@ -107,6 +109,14 @@ npm run db:setup
 ```
 
 Or apply it manually in the Supabase SQL Editor by running `supabase/schema.sql`.
+
+### 3. Production deployments (Vercel and others)
+
+The deploy button above prompts for **Interhuman** and the three **Supabase** variables. Complete the following on your live project so the leaderboard works:
+
+1. **Environment variables**: In the host (for example Vercel → **Settings** → **Environment Variables** → **Production**), set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`. All three are required; if any is missing, the leaderboard API returns *Database not configured. Connect Supabase to enable the leaderboard.*
+2. **Database schema**: Run [`supabase/schema.sql`](supabase/schema.sql) once in the Supabase **SQL Editor**, or from your machine with `npm run db:setup` and a configured `.env` (see *Create Database Tables* above).
+3. **Redeploy**: After adding or changing `NEXT_PUBLIC_*` variables, trigger a **Production** redeploy so Next.js embeds the updated public env values.
 
 ## Project Structure
 
@@ -185,7 +195,7 @@ Founders who reframe prevention questions with promotion-focused answers raise 7
 
 ### Vercel (Recommended)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FInterhumanAI%2Finterhuman-example-pitch&project-name=the-pitch-practice&repository-name=the-pitch-practice&env=INTERHUMAN_API_KEY&envDescription=Your%20Interhuman%20API%20key%20is%20required%20for%20pitch%20analysis.%20Supabase%20vars%20are%20optional%20for%20the%20leaderboard.&envLink=https%3A%2F%2Fdocs.interhuman.ai%2Fhow-to%2Fget-api-key)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FInterhumanAI%2Finterhuman-example-pitch&project-name=the-pitch-practice&repository-name=the-pitch-practice&env=INTERHUMAN_API_KEY&env=NEXT_PUBLIC_SUPABASE_URL&env=NEXT_PUBLIC_SUPABASE_ANON_KEY&env=SUPABASE_SERVICE_ROLE_KEY&envDescription=INTERHUMAN_API_KEY%20is%20required.%20For%20the%20leaderboard%2C%20set%20all%20three%20Supabase%20variables%20and%20apply%20supabase%2Fschema.sql%20in%20the%20Supabase%20SQL%20Editor%2C%20then%20redeploy%20Production.&envLink=https%3A%2F%2Fdocs.interhuman.ai%2Fhow-to%2Fget-api-key)
 
 The deploy flow prompts for `INTERHUMAN_API_KEY`, which is required for pitch analysis. Add the optional Supabase variables later if you want persistent leaderboard data.
 
