@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ArrowLeft, Trophy, Medal, Award, Loader2 } from "lucide-react";
 import { Badge } from "@/types";
+import { CHALLENGE_STATS_STORAGE_KEY } from "@/lib/brand";
 
 interface LeaderboardEntry {
   rank: number;
@@ -135,7 +136,7 @@ export default function LeaderboardPage() {
 
   const loadUserStats = () => {
     // Get stats from localStorage (saved after each challenge)
-    const statsJson = localStorage.getItem("pitchperfect_challenge_stats");
+    const statsJson = localStorage.getItem(CHALLENGE_STATS_STORAGE_KEY);
     if (statsJson) {
       try {
         const stats = JSON.parse(statsJson);

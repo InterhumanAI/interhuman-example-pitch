@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Sparkles } from "lucide-react";
+import { APP_NAME } from "@/lib/brand";
 
 export function Header() {
   return (
@@ -10,7 +11,7 @@ export function Header() {
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
           <Sparkles className="w-7 h-7 text-primary" />
-          <span className="font-bold text-xl">PitchPerfect</span>
+          <span className="font-bold text-xl">{APP_NAME}</span>
         </Link>
         <nav className="hidden md:flex items-center gap-6">
           <Link

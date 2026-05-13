@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { InterhumanAnalysisResponse, PitchScore } from "@/types";
 import { ArrowLeft, Loader2, Timer, Trophy, Zap, CheckCircle, FolderOpen, Play, X } from "lucide-react";
+import { CHALLENGE_STATS_STORAGE_KEY } from "@/lib/brand";
 import { getAllVideos, StoredVideo, formatStorageSize } from "@/lib/video-storage";
 
 type PageState = "intro" | "record" | "analyzing" | "results" | "select-video";
@@ -27,7 +28,7 @@ export default function ChallengePage() {
 
   const saveUserStats = (newScore: number) => {
     try {
-      const statsJson = localStorage.getItem("pitchperfect_challenge_stats");
+      const statsJson = localStorage.getItem(CHALLENGE_STATS_STORAGE_KEY);
       let stats = statsJson ? JSON.parse(statsJson) : {
         bestScore: 0,
         rank: null,
@@ -41,7 +42,7 @@ export default function ChallengePage() {
         stats.bestScore = newScore;
       }
 
-      localStorage.setItem("pitchperfect_challenge_stats", JSON.stringify(stats));
+      localStorage.setItem(CHALLENGE_STATS_STORAGE_KEY, JSON.stringify(stats));
     } catch {
       // localStorage not available
     }

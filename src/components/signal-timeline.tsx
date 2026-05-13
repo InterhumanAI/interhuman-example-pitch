@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { SignalEntry, SIGNAL_LABELS } from "@/types";
+import { SignalEntry, SignalType, SIGNAL_LABELS } from "@/types";
 import { formatDuration } from "@/lib/utils";
 import {
   Tooltip as UITooltip,
@@ -63,12 +63,9 @@ export function SignalTimeline({
 
   // Group signals by type for the visual overview
   const signalsByType = useMemo(() => {
-    const grouped: Record<string, typeof signalMarkers> = {};
+    const grouped: Partial<Record<SignalType, typeof signalMarkers>> = {};
     signalMarkers.forEach((marker) => {
-      if (!grouped[marker.type]) {
-        grouped[marker.type] = [];
-      }
-      grouped[marker.type].push(marker);
+      (grouped[marker.type] ??= []).push(marker);
     });
     return grouped;
   }, [signalMarkers]);
@@ -97,7 +94,7 @@ export function SignalTimeline({
             
             {/* Signal bars */}
             <div className="space-y-1.5">
-              {Object.entries(signalsByType).map(([type, markers]) => {
+              {(Object.entries(signalsByType) as [SignalType, typeof signalMarkers][]).map(([type, markers]) => {
                 const label = SIGNAL_LABELS[type];
                 const isPositive = label?.positive ?? true;
                 

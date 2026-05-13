@@ -1,12 +1,13 @@
 {
-  "name": "interhuman-example-pitch",
+  "name": "the-pitch-practice",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:setup": "node scripts/setup-supabase-db.mjs"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.0.4",
@@ -40,6 +41,7 @@
     "eslint": "^8.56.0",
     "eslint-config-next": "14.1.0",
     "postcss": "^8.4.35",
+    "postgres": "^3.4.7",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.0"
   }

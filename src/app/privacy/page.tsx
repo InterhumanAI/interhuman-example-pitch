@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Sparkles } from "lucide-react";
+import { APP_NAME } from "@/lib/brand";
 
 export const metadata = {
-  title: "Privacy Policy - PitchPerfect",
-  description: "How PitchPerfect handles your data and protects your privacy.",
+  title: `Privacy Policy - ${APP_NAME}`,
+  description: `How ${APP_NAME} handles your data and protects your privacy.`,
 };
 
 export default function PrivacyPolicyPage() {
@@ -20,7 +21,7 @@ export default function PrivacyPolicyPage() {
           </Button>
           <div className="ml-4 flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
-            <span className="font-semibold">PitchPerfect</span>
+            <span className="font-semibold">{APP_NAME}</span>
           </div>
         </div>
       </header>
@@ -33,7 +34,7 @@ export default function PrivacyPolicyPage() {
           <section>
             <h2 className="text-xl font-semibold mb-3">Overview</h2>
             <p className="text-muted-foreground leading-relaxed">
-              PitchPerfect is designed with privacy in mind. We minimize data collection 
+              {APP_NAME} is designed with privacy in mind. We minimize data collection 
               and give you control over your information. This policy explains what data 
               we collect, how we use it, and your rights.
             </p>

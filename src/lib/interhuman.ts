@@ -1,8 +1,7 @@
 import { InterhumanAnalysisResponse } from "@/types";
 
 const INTERHUMAN_API_URL = "https://api.interhuman.ai";
-const INTERHUMAN_KEY_ID = process.env.INTERHUMAN_KEY_ID;
-const INTERHUMAN_KEY_SECRET = process.env.INTERHUMAN_KEY_SECRET;
+const INTERHUMAN_API_KEY = process.env.INTERHUMAN_API_KEY;
 const MAX_FILE_SIZE_MB = 32;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
@@ -18,40 +17,13 @@ export class InterhumanAPIError extends Error {
   }
 }
 
-async function getAccessToken(): Promise<string> {
-  if (!INTERHUMAN_KEY_ID || !INTERHUMAN_KEY_SECRET) {
-    throw new InterhumanAPIError(
-      "INTERHUMAN_KEY_ID and INTERHUMAN_KEY_SECRET must be configured"
-    );
-  }
-
-  const response = await fetch(`${INTERHUMAN_API_URL}/v1/auth`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      key_id: INTERHUMAN_KEY_ID,
-      key_secret: INTERHUMAN_KEY_SECRET,
-      scopes: ["interhumanai.upload"],
-    }),
-  });
-
-  if (!response.ok) {
-    throw new InterhumanAPIError(
-      "Failed to get access token",
-      response.status,
-      await response.text()
-    );
-  }
-
-  const data = await response.json();
-  return data.access_token;
-}
-
 export async function analyzeVideo(
   videoFile: File | Blob
 ): Promise<InterhumanAnalysisResponse> {
+  if (!INTERHUMAN_API_KEY) {
+    throw new InterhumanAPIError("INTERHUMAN_API_KEY must be configured");
+  }
+
   // Check file size before uploading
   if (videoFile.size > MAX_FILE_SIZE_BYTES) {
     const sizeMB = (videoFile.size / (1024 * 1024)).toFixed(1);
@@ -63,8 +35,6 @@ export async function analyzeVideo(
     );
   }
 
-  const accessToken = await getAccessToken();
-
   const formData = new FormData();
   formData.append("file", videoFile, "video.mp4");
   // Request conversation quality data (optional field per API docs)
@@ -73,7 +43,7 @@ export async function analyzeVideo(
   const response = await fetch(`${INTERHUMAN_API_URL}/v1/upload/analyze`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${INTERHUMAN_API_KEY}`,
     },
     body: formData,
   });
@@ -82,12 +52,12 @@ export async function analyzeVideo(
     const errorText = await response.text();
     let errorMessage = `Video analysis failed: ${errorText}`;
     let errorCode: string | undefined;
-    
+
     // Parse error response for better messages
     try {
       const errorJson = JSON.parse(errorText);
       errorCode = errorJson.error_id;
-      
+
       if (errorCode === "ih4003") {
         errorMessage = `Video file is too large. Maximum size is ${MAX_FILE_SIZE_MB}MB. Please record a shorter video.`;
       } else if (errorJson.message) {
@@ -96,7 +66,7 @@ export async function analyzeVideo(
     } catch {
       // Use raw error text if not JSON
     }
-    
+
     throw new InterhumanAPIError(
       errorMessage,
       response.status,

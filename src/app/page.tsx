@@ -2,13 +2,13 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Header } from "@/components/header";
+import { APP_NAME } from "@/lib/brand";
+import { VERCEL_DEPLOY_URL } from "@/lib/deploy";
 import {
   Video,
   Timer,
   Trophy,
   TrendingUp,
-  Shield,
-  ArrowRight,
   Sparkles,
   Target,
   Award,
@@ -16,6 +16,7 @@ import {
   Users,
   Zap,
   CheckCircle,
+  ArrowRight,
 } from "lucide-react";
 
 export default function HomePage() {
@@ -98,8 +99,52 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* AI-Powered Feedback */}
+        {/* Build with Interhuman */}
         <section className="py-20 bg-secondary/30">
+          <div className="container mx-auto px-4">
+            <div className="max-w-3xl mx-auto text-center">
+              <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
+                <Sparkles className="w-4 h-4" />
+                Build with Interhuman
+              </div>
+              <h2 className="text-3xl font-bold mb-4">
+                Turn this example into your own product
+              </h2>
+              <p className="text-lg text-muted-foreground mb-8">
+                This app is a starting point for building with Interhuman&apos;s
+                behavioral intelligence APIs. Deploy your own copy in minutes,
+                connect your API key, and experiment with confidence, clarity,
+                and engagement signals in your own workflow.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                <a
+                  href={VERCEL_DEPLOY_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img
+                    src="https://vercel.com/button"
+                    alt="Deploy with Vercel"
+                    width={113}
+                    height={32}
+                  />
+                </a>
+                <Button variant="outline" size="lg" asChild>
+                  <a
+                    href="https://docs.interhuman.ai"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Read the Interhuman docs
+                  </a>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* AI-Powered Feedback */}
+        <section className="py-20 bg-background">
           <div className="container mx-auto px-4">
             <h2 className="text-3xl font-bold text-center mb-4">
               AI-Powered Feedback
@@ -128,70 +173,6 @@ export default function HomePage() {
                   </CardContent>
                 </Card>
               ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Prevention vs Promotion */}
-        <section className="py-20 bg-background">
-          <div className="container mx-auto px-4">
-            <div className="grid lg:grid-cols-2 gap-12 items-center max-w-5xl mx-auto">
-              <div>
-                <h2 className="text-3xl font-bold mb-6 leading-tight">
-                  Master the Art of Handling Investor Questions
-                </h2>
-                <p className="text-muted-foreground mb-4 leading-relaxed">
-                  Research shows that investors ask different types of questions
-                  based on unconscious bias. Male founders receive
-                  &quot;promotion&quot; questions about growth, while female
-                  founders often face &quot;prevention&quot; questions about
-                  risks.
-                </p>
-                <p className="text-muted-foreground mb-6 leading-relaxed">
-                  <strong className="text-foreground">The key insight:</strong>{" "}
-                  Founders who reframe prevention questions with
-                  promotion-focused answers raise{" "}
-                  <span className="text-primary font-bold">7x more money</span>.
-                </p>
-                <Button asChild>
-                  <Link href="/qa-practice" className="gap-2">
-                    Practice Q&A
-                    <ArrowRight className="w-4 h-4" />
-                  </Link>
-                </Button>
-              </div>
-              <Card className="p-6 bg-secondary/30 border-0">
-                <div className="space-y-6">
-                  <div>
-                    <div className="flex items-center gap-2 text-orange-600 mb-2">
-                      <Shield className="w-5 h-5" />
-                      <span className="font-medium text-sm">Prevention Question</span>
-                    </div>
-                    <p className="text-muted-foreground italic">
-                      &quot;How long will it take you to break even?&quot;
-                    </p>
-                  </div>
-                  <div className="border-l-4 border-red-300 pl-4">
-                    <p className="text-xs text-muted-foreground mb-1">
-                      Defensive answer:
-                    </p>
-                    <p className="text-sm">
-                      &quot;We&apos;re being careful with spending and should
-                      break even in 18 months if things go well...&quot;
-                    </p>
-                  </div>
-                  <div className="border-l-4 border-green-500 pl-4">
-                    <p className="text-xs text-primary mb-1 font-medium">
-                      Promotion reframe:
-                    </p>
-                    <p className="text-sm">
-                      &quot;Our path to profitability accelerates as we
-                      scale—we&apos;ll hit break-even at 10K users, and our
-                      growth trajectory puts us there in 12 months.&quot;
-                    </p>
-                  </div>
-                </div>
-              </Card>
             </div>
           </div>
         </section>
@@ -228,25 +209,6 @@ export default function HomePage() {
             </div>
           </div>
         </section>
-
-        {/* Final CTA */}
-        <section className="py-20 bg-background">
-          <div className="container mx-auto px-4 text-center">
-            <h2 className="text-3xl font-bold mb-4">
-              Ready to Perfect Your Pitch?
-            </h2>
-            <p className="text-lg text-muted-foreground mb-8 max-w-xl mx-auto">
-              Join thousands of founders who have improved their pitch delivery
-              and raised more funding.
-            </p>
-            <Button size="xl" asChild className="shadow-lg shadow-primary/25">
-              <Link href="/pitch/record" className="gap-2">
-                Get Started Free
-                <ArrowRight className="w-5 h-5" />
-              </Link>
-            </Button>
-          </div>
-        </section>
       </main>
 
       {/* Footer */}
@@ -255,7 +217,7 @@ export default function HomePage() {
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-primary" />
-              <span className="font-semibold">PitchPerfect</span>
+              <span className="font-semibold">{APP_NAME}</span>
             </div>
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
               <Link href="/privacy" className="hover:text-primary transition-colors">

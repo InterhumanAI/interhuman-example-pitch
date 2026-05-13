@@ -1,8 +1,10 @@
-# PitchPerfect - AI-Powered Investor Pitch Practice
+# The Pitch Practice - AI-Powered Investor Pitch Practice
 
 An example application demonstrating how to build with [Interhuman AI's](https://interhuman.ai) social signal analysis API. This app helps founders practice their investor pitches with real-time feedback on confidence, clarity, energy, and more.
 
-![PitchPerfect Screenshot](screenshot.png)
+![The Pitch Practice Screenshot](screenshot.png)
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FInterhumanAI%2Finterhuman-example-pitch&project-name=the-pitch-practice&repository-name=the-pitch-practice&env=INTERHUMAN_API_KEY&env=NEXT_PUBLIC_SUPABASE_URL&env=NEXT_PUBLIC_SUPABASE_ANON_KEY&env=SUPABASE_SERVICE_ROLE_KEY&envDescription=INTERHUMAN_API_KEY%20is%20required.%20For%20the%20leaderboard%2C%20set%20all%20three%20Supabase%20variables%20and%20apply%20supabase%2Fschema.sql%20in%20the%20Supabase%20SQL%20Editor%2C%20then%20redeploy%20Production.&envLink=https%3A%2F%2Fdocs.interhuman.ai%2Fhow-to%2Fget-api-key)
 
 ## Features
 
@@ -38,14 +40,14 @@ An example application demonstrating how to build with [Interhuman AI's](https:/
 ### Prerequisites
 
 - Node.js 18+
-- [Interhuman AI](https://interhuman.ai) API credentials
+- [Interhuman AI](https://interhuman.ai) API key ([get one](https://docs.interhuman.ai/how-to/get-api-key))
 - [Supabase](https://supabase.com) account (optional, for leaderboard)
 
 ### Installation
 
 1. Install dependencies:
 ```bash
-cd interhuman-example-pitch
+cd the-pitch-practice
 npm install
 ```
 
@@ -67,22 +69,24 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `INTERHUMAN_KEY_ID` | Yes | Your Interhuman Key ID |
-| `INTERHUMAN_KEY_SECRET` | Yes | Your Interhuman Key Secret |
-| `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase project URL (for leaderboard) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Supabase anon/public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | No | Supabase service role key |
+| `INTERHUMAN_API_KEY` | Yes | Your Interhuman API key (server-side only; do not use `NEXT_PUBLIC_*`) |
+| `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase project URL (for leaderboard; required together with the next two) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Supabase publishable key (`sb_publishable_...`) |
+| `SUPABASE_SERVICE_ROLE_KEY` | No | Supabase secret key (`sb_secret_...`; server-side only; omitting it disables the leaderboard) |
+| `NEXT_PUBLIC_APP_URL` | No | Public site URL used for share links and metadata |
 
 Example `.env`:
 ```env
-INTERHUMAN_KEY_ID=your_key_id
-INTERHUMAN_KEY_SECRET=your_key_secret
+INTERHUMAN_API_KEY=your_api_key
+NEXT_PUBLIC_APP_URL=https://thepitchpractice.com
 
 # Optional - for leaderboard persistence
-NEXT_PUBLIC_SUPABASE_URL=https://abc123.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_your_publishable_key_here
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_your_secret_key_here
 ```
+
+For production variable names only, see [`.env.production.example`](.env.production.example).
 
 ## Supabase Setup (Optional)
 
@@ -92,14 +96,27 @@ The app works without Supabase - you just won't have a persistent leaderboard.
 
 1. Go to [supabase.com](https://supabase.com) and create a free project
 2. Go to **Project Settings → API**
-3. Copy the **Project URL** and **anon public** key to your `.env`
-4. Copy the **service_role** key to your `.env` (keep this secret!)
+3. Copy the **Project URL** and **publishable** key (`sb_publishable_...`) to your `.env`
+4. Copy the **secret** key (`sb_secret_...`) to `SUPABASE_SERVICE_ROLE_KEY` (keep this server-side only)
+5. Copy the **database password** from **Project Settings → Database** to `SUPABASE_DB_PASSWORD` for local setup
 
 ### 2. Create Database Tables
 
-1. Go to **SQL Editor** in your Supabase dashboard
-2. Create a new query
-3. Copy the contents of `supabase/schema.sql` and run it
+Run the schema locally:
+
+```bash
+npm run db:setup
+```
+
+Or apply it manually in the Supabase SQL Editor by running `supabase/schema.sql`.
+
+### 3. Production deployments (Vercel and others)
+
+The deploy button above prompts for **Interhuman** and the three **Supabase** variables. Complete the following on your live project so the leaderboard works:
+
+1. **Environment variables**: In the host (for example Vercel → **Settings** → **Environment Variables** → **Production**), set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`. All three are required; if any is missing, the leaderboard API returns *Database not configured. Connect Supabase to enable the leaderboard.*
+2. **Database schema**: Run [`supabase/schema.sql`](supabase/schema.sql) once in the Supabase **SQL Editor**, or from your machine with `npm run db:setup` and a configured `.env` (see *Create Database Tables* above).
+3. **Redeploy**: After adding or changing `NEXT_PUBLIC_*` variables, trigger a **Production** redeploy so Next.js embeds the updated public env values.
 
 ## Project Structure
 
@@ -148,14 +165,13 @@ The app uses Interhuman AI's video analysis API to detect social signals and cal
 const response = await fetch("https://api.interhuman.ai/v1/upload/analyze", {
   method: "POST",
   headers: {
-    "X-API-Key-Id": process.env.INTERHUMAN_KEY_ID,
-    "X-API-Key-Secret": process.env.INTERHUMAN_KEY_SECRET,
+    Authorization: `Bearer ${process.env.INTERHUMAN_API_KEY}`,
   },
   body: formData, // Contains the video file
 });
 
 const analysis = await response.json();
-// Returns: engagement_states, signals
+// Returns: engagement_state, signals
 ```
 
 The API returns:
@@ -179,10 +195,16 @@ Founders who reframe prevention questions with promotion-focused answers raise 7
 
 ### Vercel (Recommended)
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FInterhumanAI%2Finterhuman-example-pitch&project-name=the-pitch-practice&repository-name=the-pitch-practice&env=INTERHUMAN_API_KEY&env=NEXT_PUBLIC_SUPABASE_URL&env=NEXT_PUBLIC_SUPABASE_ANON_KEY&env=SUPABASE_SERVICE_ROLE_KEY&envDescription=INTERHUMAN_API_KEY%20is%20required.%20For%20the%20leaderboard%2C%20set%20all%20three%20Supabase%20variables%20and%20apply%20supabase%2Fschema.sql%20in%20the%20Supabase%20SQL%20Editor%2C%20then%20redeploy%20Production.&envLink=https%3A%2F%2Fdocs.interhuman.ai%2Fhow-to%2Fget-api-key)
+
+The deploy flow prompts for `INTERHUMAN_API_KEY`, which is required for pitch analysis. Add the optional Supabase variables later if you want persistent leaderboard data.
+
+#### Manual import
+
 1. Push your code to GitHub
 2. Import the repo in [Vercel](https://vercel.com)
 3. Add your environment variables in Vercel's dashboard
-4. Update `NEXT_PUBLIC_APP_URL` to your production URL
+4. Set `NEXT_PUBLIC_APP_URL` to your production URL (for example, `https://thepitchpractice.com`)
 
 ## License
 
