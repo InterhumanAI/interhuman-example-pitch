@@ -133,8 +133,7 @@ src/
 │   ├── terms/page.tsx              # Terms of service
 │   ├── share/[id]/page.tsx         # Shareable results page
 │   └── api/
-│       ├── pitch/token/route.ts    # Upload auth for direct Interhuman uploads
-│       ├── pitch/complete/route.ts # Score + leaderboard after analysis
+│       ├── pitch/analyze/route.ts  # Compressed upload + analysis + scoring
 │       ├── leaderboard/route.ts    # Leaderboard API
 │       └── share/image/route.tsx   # Share card image generation
 ├── components/
@@ -162,17 +161,11 @@ supabase/
 The app uses Interhuman AI's video analysis API to detect social signals and calculated conversation quality scores. Here's a simplified example of how the integration works:
 
 ```typescript
-// Browser uploads directly to Interhuman (up to 32MB), then scores via our API
-const response = await fetch("https://api.interhuman.ai/v1/upload/analyze", {
-  method: "POST",
-  headers: {
-    Authorization: `Bearer ${apiKey}`, // from POST /api/pitch/token
-  },
-  body: formData,
-});
-
-const analysis = await response.json();
-// Returns: engagement_states, signals, conversation_quality
+// Client compresses video, then POST /api/pitch/analyze (fits Vercel body limits)
+const formData = new FormData();
+formData.append("video", compressedBlob, "pitch.webm");
+const response = await fetch("/api/pitch/analyze", { method: "POST", body: formData });
+const { analysis, score } = await response.json();
 ```
 
 The API returns:

@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  VERCEL_UPLOAD_MAX_BYTES,
+  VERCEL_UPLOAD_MAX_MB,
+} from "@/lib/upload-limits";
+
 export interface CompressionOptions {
   maxWidth: number;
   maxHeight: number;
@@ -9,6 +14,30 @@ export interface CompressionOptions {
 }
 
 export const COMPRESSION_PRESETS: Record<string, CompressionOptions> = {
+  /** Default for recording + upload — small enough for Vercel, OK for analysis */
+  aggressive: {
+    maxWidth: 426,
+    maxHeight: 240,
+    videoBitrate: 280000,
+    audioBitrate: 48000,
+    frameRate: 20,
+  },
+  /** Second pass if aggressive is still over the upload cap */
+  ultra: {
+    maxWidth: 320,
+    maxHeight: 180,
+    videoBitrate: 180000,
+    audioBitrate: 32000,
+    frameRate: 15,
+  },
+  /** Third pass — smallest preset before dynamic reduction */
+  minimal: {
+    maxWidth: 256,
+    maxHeight: 144,
+    videoBitrate: 120000,
+    audioBitrate: 24000,
+    frameRate: 12,
+  },
   low: {
     maxWidth: 480,
     maxHeight: 360,
@@ -309,4 +338,77 @@ export async function compressVideoBlob(
 
     video.src = URL.createObjectURL(blob);
   });
+}
+
+const UPLOAD_COMPRESSION_CHAIN: CompressionOptions[] = [
+  COMPRESSION_PRESETS.aggressive,
+  COMPRESSION_PRESETS.ultra,
+  COMPRESSION_PRESETS.minimal,
+];
+
+const MAX_EXTRA_REDUCTION_PASSES = 4;
+
+function scaleCompressionOptions(
+  base: CompressionOptions,
+  factor: number
+): CompressionOptions {
+  return {
+    maxWidth: Math.max(160, Math.floor((base.maxWidth * factor) / 2) * 2),
+    maxHeight: Math.max(90, Math.floor((base.maxHeight * factor) / 2) * 2),
+    videoBitrate: Math.max(80000, Math.round(base.videoBitrate * factor)),
+    audioBitrate: Math.max(16000, Math.round(base.audioBitrate * factor)),
+    frameRate: Math.max(10, Math.round(base.frameRate * factor)),
+  };
+}
+
+/**
+ * Re-encode until the file fits Vercel's ~4.5MB body limit.
+ * Runs the first pass, checks size, then compresses again until under the cap.
+ */
+export async function compressVideoForUpload(
+  blob: Blob,
+  onProgress?: (progress: number) => void
+): Promise<Blob> {
+  let current = blob;
+  const totalPlannedPasses =
+    UPLOAD_COMPRESSION_CHAIN.length + MAX_EXTRA_REDUCTION_PASSES;
+  let passIndex = 0;
+
+  const reportPassProgress = (passProgress: number) => {
+    if (!onProgress) return;
+    const overall = (passIndex + passProgress) / totalPlannedPasses;
+    onProgress(Math.min(overall, 0.99));
+  };
+
+  for (const preset of UPLOAD_COMPRESSION_CHAIN) {
+    current = await compressVideoBlob(current, preset, reportPassProgress);
+    passIndex += 1;
+
+    if (current.size <= VERCEL_UPLOAD_MAX_BYTES) {
+      onProgress?.(1);
+      return current;
+    }
+  }
+
+  let reductionFactor = 0.9;
+  for (let i = 0; i < MAX_EXTRA_REDUCTION_PASSES; i++) {
+    const preset = scaleCompressionOptions(
+      COMPRESSION_PRESETS.minimal,
+      reductionFactor
+    );
+    current = await compressVideoBlob(current, preset, reportPassProgress);
+    passIndex += 1;
+
+    if (current.size <= VERCEL_UPLOAD_MAX_BYTES) {
+      onProgress?.(1);
+      return current;
+    }
+
+    reductionFactor *= 0.85;
+  }
+
+  const sizeMB = (current.size / (1024 * 1024)).toFixed(1);
+  throw new Error(
+    `Video is still too large after compression (${sizeMB}MB). Maximum upload size is ${VERCEL_UPLOAD_MAX_MB}MB. Please record a shorter video.`
+  );
 }

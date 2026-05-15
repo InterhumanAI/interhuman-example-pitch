@@ -133,7 +133,7 @@ export function VideoRecorder({
     setSaveSuccess(false);
 
     // Use resizing recorder for on-the-fly compression
-    const recorder = new ResizingMediaRecorder(COMPRESSION_PRESETS.medium);
+    const recorder = new ResizingMediaRecorder(COMPRESSION_PRESETS.aggressive);
     resizingRecorderRef.current = recorder;
 
     recorder.onstop = (blob) => {

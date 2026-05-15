@@ -415,9 +415,9 @@ export default function ChallengePage() {
         {pageState === "analyzing" && (
           <div className="flex flex-col items-center justify-center py-20">
             <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
-            <h2 className="text-xl font-semibold mb-2">Analyzing your pitch...</h2>
+            <h2 className="text-xl font-semibold mb-2">Processing your pitch...</h2>
             <p className="text-muted-foreground">
-              Calculating your score and ranking
+              Compressing video, then analyzing your score
             </p>
           </div>
         )}
