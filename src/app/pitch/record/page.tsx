@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InterhumanAnalysisResponse, PitchScore } from "@/types";
 import { StoredVideo, updateVideoAnalyzed } from "@/lib/video-storage";
 import { submitPitchAnalysis } from "@/lib/submit-pitch-analysis";
+import { formatCompressionStatus } from "@/lib/video-compression";
 import { ArrowLeft, Loader2 } from "lucide-react";
 
 type PageState = "record" | "analyzing" | "results";
@@ -22,11 +23,13 @@ export default function RecordPitchPage() {
   const [error, setError] = useState<string | null>(null);
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
   const [currentVideoBlob, setCurrentVideoBlob] = useState<Blob | null>(null);
+  const [compressStatus, setCompressStatus] = useState<string | null>(null);
 
   const analyzeVideo = async (blob: Blob, recordedDuration: number, videoId?: string) => {
     setPageState("analyzing");
     setDuration(recordedDuration);
     setError(null);
+    setCompressStatus(null);
     setCurrentVideoId(videoId || null);
     setCurrentVideoBlob(blob);
 
@@ -36,6 +39,8 @@ export default function RecordPitchPage() {
         duration: recordedDuration,
         mode: "free_pitch",
         videoId,
+        onCompressProgress: (update) =>
+          setCompressStatus(formatCompressionStatus(update)),
       });
       setAnalysis(data.analysis);
       setPitchScore(data.score);
@@ -178,10 +183,10 @@ export default function RecordPitchPage() {
             <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
             <h2 className="text-xl font-semibold mb-2">Processing your pitch...</h2>
             <p className="text-muted-foreground text-sm mt-1">
-              Compressing video, then running analysis
+              {compressStatus || "Preparing video for upload…"}
             </p>
             <p className="text-muted-foreground">
-              This usually takes 30-60 seconds
+              Then running analysis (usually 30–60 seconds)
             </p>
           </div>
         )}

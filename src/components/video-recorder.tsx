@@ -14,6 +14,7 @@ import {
 } from "@/lib/video-storage";
 
 import {
+  LARGE_RECORDING_WARNING_BYTES,
   MAX_UPLOAD_SIZE_BYTES,
   MAX_UPLOAD_SIZE_MB,
 } from "@/lib/upload-limits";
@@ -142,6 +143,10 @@ export function VideoRecorder({
       if (blob.size > MAX_UPLOAD_SIZE_BYTES) {
         setFileSizeWarning(
           `Video is ${formatStorageSize(blob.size)} (max ${MAX_UPLOAD_SIZE_MB}MB). Please record a shorter video.`
+        );
+      } else if (blob.size > LARGE_RECORDING_WARNING_BYTES) {
+        setFileSizeWarning(
+          `Large recording (${formatStorageSize(blob.size)}) — compression may take a minute before analysis.`
         );
       } else if (blob.size > MAX_UPLOAD_SIZE_BYTES * 0.8) {
         setFileSizeWarning(

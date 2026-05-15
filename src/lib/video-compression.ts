@@ -4,6 +4,7 @@ import {
   VERCEL_UPLOAD_MAX_BYTES,
   VERCEL_UPLOAD_MAX_MB,
 } from "@/lib/upload-limits";
+import { pitchAnalyzeLog } from "@/lib/pitch-analyze-log";
 
 export interface CompressionOptions {
   maxWidth: number;
@@ -14,7 +15,6 @@ export interface CompressionOptions {
 }
 
 export const COMPRESSION_PRESETS: Record<string, CompressionOptions> = {
-  /** Default for recording + upload — small enough for Vercel, OK for analysis */
   aggressive: {
     maxWidth: 426,
     maxHeight: 240,
@@ -22,7 +22,6 @@ export const COMPRESSION_PRESETS: Record<string, CompressionOptions> = {
     audioBitrate: 48000,
     frameRate: 20,
   },
-  /** Second pass if aggressive is still over the upload cap */
   ultra: {
     maxWidth: 320,
     maxHeight: 180,
@@ -30,7 +29,6 @@ export const COMPRESSION_PRESETS: Record<string, CompressionOptions> = {
     audioBitrate: 32000,
     frameRate: 15,
   },
-  /** Third pass — smallest preset before dynamic reduction */
   minimal: {
     maxWidth: 256,
     maxHeight: 144,
@@ -60,6 +58,48 @@ export const COMPRESSION_PRESETS: Record<string, CompressionOptions> = {
     frameRate: 30,
   },
 };
+
+export type CompressionProgressUpdate = {
+  progress: number;
+  pass: number;
+  totalPasses: number;
+  currentSizeBytes: number;
+  originalSizeBytes: number;
+};
+
+export type CompressVideoForUploadResult = {
+  blob: Blob;
+  originalSize: number;
+  finalSize: number;
+  passes: number;
+  skippedCompression: boolean;
+};
+
+export function formatCompressionStatus(
+  update: CompressionProgressUpdate
+): string {
+  const originalMb = (update.originalSizeBytes / (1024 * 1024)).toFixed(1);
+  const currentMb = (update.currentSizeBytes / (1024 * 1024)).toFixed(1);
+
+  if (update.progress >= 1) {
+    return `Ready — ${currentMb} MB`;
+  }
+
+  const passNum = Math.max(1, update.pass + 1);
+  if (update.pass === 0 && update.progress < 0.05) {
+    return `Compressing ${originalMb} MB…`;
+  }
+
+  return `Pass ${passNum}/${update.totalPasses} — ${currentMb} MB`;
+}
+
+const UPLOAD_COMPRESSION_CHAIN: CompressionOptions[] = [
+  COMPRESSION_PRESETS.aggressive,
+  COMPRESSION_PRESETS.ultra,
+  COMPRESSION_PRESETS.minimal,
+];
+
+const MAX_EXTRA_REDUCTION_PASSES = 4;
 
 export function getSupportedMimeType(): string {
   const types = [
@@ -97,11 +137,23 @@ export function calculateDimensions(
     width = Math.round(height * aspectRatio);
   }
 
-  // Ensure dimensions are even (required for some codecs)
   width = Math.floor(width / 2) * 2;
   height = Math.floor(height / 2) * 2;
 
   return { width, height };
+}
+
+function scaleCompressionOptions(
+  base: CompressionOptions,
+  factor: number
+): CompressionOptions {
+  return {
+    maxWidth: Math.max(160, Math.floor((base.maxWidth * factor) / 2) * 2),
+    maxHeight: Math.max(90, Math.floor((base.maxHeight * factor) / 2) * 2),
+    videoBitrate: Math.max(80000, Math.round(base.videoBitrate * factor)),
+    audioBitrate: Math.max(16000, Math.round(base.audioBitrate * factor)),
+    frameRate: Math.max(10, Math.round(base.frameRate * factor)),
+  };
 }
 
 export class ResizingMediaRecorder {
@@ -147,10 +199,8 @@ export class ResizingMediaRecorder {
     this.videoElement.srcObject = sourceStream;
     await this.videoElement.play();
 
-    // Create a stream from the canvas
     const canvasStream = this.canvas.captureStream(this.options.frameRate);
 
-    // Add audio track from original stream
     const audioTracks = sourceStream.getAudioTracks();
     if (audioTracks.length > 0) {
       canvasStream.addTrack(audioTracks[0]);
@@ -184,7 +234,6 @@ export class ResizingMediaRecorder {
       this.onerror?.(new Error(`MediaRecorder error: ${e}`));
     };
 
-    // Start drawing frames to canvas
     this.isRecording = true;
     this.drawFrame();
 
@@ -257,8 +306,60 @@ export async function compressVideoBlob(
     const video = document.createElement("video");
     video.muted = true;
     video.playsInline = true;
+    video.preload = "auto";
 
-    video.onloadedmetadata = async () => {
+    const objectUrl = URL.createObjectURL(blob);
+    let audioCtx: AudioContext | null = null;
+    let finished = false;
+    let encodingStarted = false;
+    let animationFrameId: number | null = null;
+    let recorder: MediaRecorder | null = null;
+
+    const cleanup = () => {
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+      URL.revokeObjectURL(objectUrl);
+      video.removeAttribute("src");
+      video.load();
+      if (audioCtx) {
+        void audioCtx.close();
+        audioCtx = null;
+      }
+    };
+
+    const finish = (result: Blob) => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      resolve(result);
+    };
+
+    const fail = (error: Error) => {
+      if (finished) return;
+      finished = true;
+      try {
+        if (recorder && recorder.state !== "inactive") {
+          recorder.stop();
+        }
+      } catch {
+        // ignore
+      }
+      cleanup();
+      reject(error);
+    };
+
+    const startEncoding = () => {
+      if (encodingStarted || finished) return;
+      encodingStarted = true;
+
+      const duration = video.duration;
+      if (!Number.isFinite(duration) || duration <= 0) {
+        fail(new Error("Invalid video duration for compression"));
+        return;
+      }
+
       const { width, height } = calculateDimensions(
         video.videoWidth,
         video.videoHeight,
@@ -269,27 +370,29 @@ export async function compressVideoBlob(
       const canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
-      const ctx = canvas.getContext("2d")!;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        fail(new Error("Compression failed"));
+        return;
+      }
 
       const canvasStream = canvas.captureStream(options.frameRate);
 
-      // Try to get audio from the original video
       try {
-        const audioCtx = new AudioContext();
+        audioCtx = new AudioContext();
         const source = audioCtx.createMediaElementSource(video);
         const destination = audioCtx.createMediaStreamDestination();
         source.connect(destination);
-        source.connect(audioCtx.destination);
         const audioTrack = destination.stream.getAudioTracks()[0];
         if (audioTrack) {
           canvasStream.addTrack(audioTrack);
         }
       } catch {
-        // Audio extraction failed, continue without audio
+        // Continue without re-encoded audio
       }
 
       const mimeType = getSupportedMimeType();
-      const recorder = new MediaRecorder(canvasStream, {
+      recorder = new MediaRecorder(canvasStream, {
         mimeType,
         videoBitsPerSecond: options.videoBitrate,
         audioBitsPerSecond: options.audioBitrate,
@@ -301,92 +404,157 @@ export async function compressVideoBlob(
       };
 
       recorder.onstop = () => {
-        const compressedBlob = new Blob(chunks, { type: mimeType.split(";")[0] });
-        URL.revokeObjectURL(video.src);
-        resolve(compressedBlob);
+        finish(new Blob(chunks, { type: mimeType.split(";")[0] }));
       };
 
       recorder.onerror = () => {
-        URL.revokeObjectURL(video.src);
-        reject(new Error("Compression failed"));
+        fail(new Error("Compression failed"));
       };
 
       video.ontimeupdate = () => {
-        onProgress?.(video.currentTime / video.duration);
+        if (video.duration > 0) {
+          onProgress?.(Math.min(video.currentTime / video.duration, 0.99));
+        }
       };
 
       video.onended = () => {
-        recorder.stop();
+        if (recorder && recorder.state === "recording") {
+          recorder.stop();
+        }
       };
-
-      recorder.start();
 
       const drawFrame = () => {
         if (video.paused || video.ended) return;
         ctx.drawImage(video, 0, 0, width, height);
-        requestAnimationFrame(drawFrame);
+        animationFrameId = requestAnimationFrame(drawFrame);
       };
 
-      video.play();
-      drawFrame();
+      recorder.start();
+
+      video
+        .play()
+        .then(() => {
+          drawFrame();
+        })
+        .catch(() => fail(new Error("Failed to play video for compression")));
+
+      // Fallback if onended does not fire
+      const timeoutMs = Math.ceil(duration * 1000) + 5000;
+      window.setTimeout(() => {
+        if (!finished && recorder && recorder.state === "recording") {
+          recorder.stop();
+        }
+      }, timeoutMs);
+    };
+
+    video.onloadedmetadata = () => {
+      if (video.readyState >= 2) {
+        startEncoding();
+      }
+    };
+
+    video.onloadeddata = () => {
+      if (!finished && (!recorder || recorder.state === "inactive")) {
+        startEncoding();
+      }
     };
 
     video.onerror = () => {
-      URL.revokeObjectURL(video.src);
-      reject(new Error("Failed to load video for compression"));
+      fail(new Error("Failed to load video for compression"));
     };
 
-    video.src = URL.createObjectURL(blob);
+    video.src = objectUrl;
   });
 }
 
-const UPLOAD_COMPRESSION_CHAIN: CompressionOptions[] = [
-  COMPRESSION_PRESETS.aggressive,
-  COMPRESSION_PRESETS.ultra,
-  COMPRESSION_PRESETS.minimal,
-];
-
-const MAX_EXTRA_REDUCTION_PASSES = 4;
-
-function scaleCompressionOptions(
-  base: CompressionOptions,
-  factor: number
-): CompressionOptions {
-  return {
-    maxWidth: Math.max(160, Math.floor((base.maxWidth * factor) / 2) * 2),
-    maxHeight: Math.max(90, Math.floor((base.maxHeight * factor) / 2) * 2),
-    videoBitrate: Math.max(80000, Math.round(base.videoBitrate * factor)),
-    audioBitrate: Math.max(16000, Math.round(base.audioBitrate * factor)),
-    frameRate: Math.max(10, Math.round(base.frameRate * factor)),
-  };
-}
-
 /**
- * Re-encode until the file fits Vercel's ~4.5MB body limit.
- * Runs the first pass, checks size, then compresses again until under the cap.
+ * Re-encode until the file fits the safe Vercel upload budget.
  */
 export async function compressVideoForUpload(
   blob: Blob,
-  onProgress?: (progress: number) => void
-): Promise<Blob> {
-  let current = blob;
-  const totalPlannedPasses =
+  onProgress?: (update: CompressionProgressUpdate) => void
+): Promise<CompressVideoForUploadResult> {
+  const originalSize = blob.size;
+  const totalPasses =
     UPLOAD_COMPRESSION_CHAIN.length + MAX_EXTRA_REDUCTION_PASSES;
-  let passIndex = 0;
 
-  const reportPassProgress = (passProgress: number) => {
-    if (!onProgress) return;
-    const overall = (passIndex + passProgress) / totalPlannedPasses;
-    onProgress(Math.min(overall, 0.99));
+  pitchAnalyzeLog.info("Starting upload compression", {
+    original: pitchAnalyzeLog.formatMb(originalSize),
+    limit: pitchAnalyzeLog.formatMb(VERCEL_UPLOAD_MAX_BYTES),
+    maxPasses: totalPasses,
+  });
+
+  if (blob.size <= VERCEL_UPLOAD_MAX_BYTES) {
+    pitchAnalyzeLog.info("Already under upload limit — skipping compression", {
+      size: pitchAnalyzeLog.formatMb(blob.size),
+    });
+    onProgress?.({
+      progress: 1,
+      pass: 0,
+      totalPasses,
+      currentSizeBytes: blob.size,
+      originalSizeBytes: originalSize,
+    });
+    return {
+      blob,
+      originalSize,
+      finalSize: blob.size,
+      passes: 0,
+      skippedCompression: true,
+    };
+  }
+
+  let current = blob;
+  let passIndex = 0;
+  const sizeBeforePass = () => current.size;
+
+  const emit = (passProgress: number) => {
+    onProgress?.({
+      progress: Math.min((passIndex + passProgress) / totalPasses, 0.99),
+      pass: passIndex,
+      totalPasses,
+      currentSizeBytes: current.size,
+      originalSizeBytes: originalSize,
+    });
   };
 
   for (const preset of UPLOAD_COMPRESSION_CHAIN) {
-    current = await compressVideoBlob(current, preset, reportPassProgress);
+    const before = sizeBeforePass();
+    current = await compressVideoBlob(current, preset, emit);
     passIndex += 1;
+    pitchAnalyzeLog.info(`Compression pass ${passIndex}/${totalPasses}`, {
+      preset: `${preset.maxWidth}x${preset.maxHeight}`,
+      before: pitchAnalyzeLog.formatMb(before),
+      after: pitchAnalyzeLog.formatMb(current.size),
+    });
+    onProgress?.({
+      progress: Math.min(passIndex / totalPasses, 0.99),
+      pass: passIndex,
+      totalPasses,
+      currentSizeBytes: current.size,
+      originalSizeBytes: originalSize,
+    });
 
     if (current.size <= VERCEL_UPLOAD_MAX_BYTES) {
-      onProgress?.(1);
-      return current;
+      pitchAnalyzeLog.info("Compression complete — ready to upload", {
+        original: pitchAnalyzeLog.formatMb(originalSize),
+        final: pitchAnalyzeLog.formatMb(current.size),
+        passes: passIndex,
+      });
+      onProgress?.({
+        progress: 1,
+        pass: passIndex,
+        totalPasses,
+        currentSizeBytes: current.size,
+        originalSizeBytes: originalSize,
+      });
+      return {
+        blob: current,
+        originalSize,
+        finalSize: current.size,
+        passes: passIndex,
+        skippedCompression: false,
+      };
     }
   }
 
@@ -396,19 +564,53 @@ export async function compressVideoForUpload(
       COMPRESSION_PRESETS.minimal,
       reductionFactor
     );
-    current = await compressVideoBlob(current, preset, reportPassProgress);
+    const before = sizeBeforePass();
+    current = await compressVideoBlob(current, preset, emit);
     passIndex += 1;
+    pitchAnalyzeLog.info(`Extra reduction pass ${passIndex}/${totalPasses}`, {
+      before: pitchAnalyzeLog.formatMb(before),
+      after: pitchAnalyzeLog.formatMb(current.size),
+    });
+    onProgress?.({
+      progress: Math.min(passIndex / totalPasses, 0.99),
+      pass: passIndex,
+      totalPasses,
+      currentSizeBytes: current.size,
+      originalSizeBytes: originalSize,
+    });
 
     if (current.size <= VERCEL_UPLOAD_MAX_BYTES) {
-      onProgress?.(1);
-      return current;
+      pitchAnalyzeLog.info("Compression complete — ready to upload", {
+        original: pitchAnalyzeLog.formatMb(originalSize),
+        final: pitchAnalyzeLog.formatMb(current.size),
+        passes: passIndex,
+      });
+      onProgress?.({
+        progress: 1,
+        pass: passIndex,
+        totalPasses,
+        currentSizeBytes: current.size,
+        originalSizeBytes: originalSize,
+      });
+      return {
+        blob: current,
+        originalSize,
+        finalSize: current.size,
+        passes: passIndex,
+        skippedCompression: false,
+      };
     }
 
     reductionFactor *= 0.85;
   }
 
   const sizeMB = (current.size / (1024 * 1024)).toFixed(1);
+  pitchAnalyzeLog.error("Could not compress below upload limit", {
+    final: `${sizeMB} MB`,
+    passes: passIndex,
+    limit: pitchAnalyzeLog.formatMb(VERCEL_UPLOAD_MAX_BYTES),
+  });
   throw new Error(
-    `Video is still too large after compression (${sizeMB}MB). Maximum upload size is ${VERCEL_UPLOAD_MAX_MB}MB. Please record a shorter video.`
+    `Could not compress below ${VERCEL_UPLOAD_MAX_MB}MB (still ${sizeMB}MB after ${passIndex} passes). Please record a shorter video.`
   );
 }

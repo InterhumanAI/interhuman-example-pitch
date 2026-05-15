@@ -12,6 +12,7 @@ import { ArrowLeft, Loader2, Timer, Trophy, Zap, CheckCircle, FolderOpen, Play, 
 import { CHALLENGE_STATS_STORAGE_KEY } from "@/lib/brand";
 import { getAllVideos, StoredVideo, formatStorageSize } from "@/lib/video-storage";
 import { submitPitchAnalysis } from "@/lib/submit-pitch-analysis";
+import { formatCompressionStatus } from "@/lib/video-compression";
 
 type PageState = "intro" | "record" | "analyzing" | "results" | "select-video";
 
@@ -26,6 +27,7 @@ export default function ChallengePage() {
   const [savedVideos, setSavedVideos] = useState<StoredVideo[]>([]);
   const [selectedVideo, setSelectedVideo] = useState<StoredVideo | null>(null);
   const [loadingVideos, setLoadingVideos] = useState(false);
+  const [compressStatus, setCompressStatus] = useState<string | null>(null);
 
   const saveUserStats = (newScore: number) => {
     try {
@@ -53,6 +55,7 @@ export default function ChallengePage() {
     setPageState("analyzing");
     setDuration(recordedDuration);
     setError(null);
+    setCompressStatus(null);
 
     try {
       const data = await submitPitchAnalysis({
@@ -60,6 +63,8 @@ export default function ChallengePage() {
         duration: recordedDuration,
         mode: "one_minute_challenge",
         userName: userName.trim() || undefined,
+        onCompressProgress: (update) =>
+          setCompressStatus(formatCompressionStatus(update)),
       });
       setAnalysis(data.analysis);
       setPitchScore(data.score);
@@ -116,6 +121,7 @@ export default function ChallengePage() {
     setPageState("analyzing");
     setDuration(selectedVideo.duration);
     setError(null);
+    setCompressStatus(null);
 
     try {
       const data = await submitPitchAnalysis({
@@ -124,6 +130,8 @@ export default function ChallengePage() {
         mode: "one_minute_challenge",
         videoId: selectedVideo.id,
         userName: userName.trim() || undefined,
+        onCompressProgress: (update) =>
+          setCompressStatus(formatCompressionStatus(update)),
       });
       setAnalysis(data.analysis);
       setPitchScore(data.score);
@@ -417,7 +425,10 @@ export default function ChallengePage() {
             <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
             <h2 className="text-xl font-semibold mb-2">Processing your pitch...</h2>
             <p className="text-muted-foreground">
-              Compressing video, then analyzing your score
+              {compressStatus || "Preparing video for upload…"}
+            </p>
+            <p className="text-muted-foreground text-sm mt-2">
+              Then analyzing your score
             </p>
           </div>
         )}

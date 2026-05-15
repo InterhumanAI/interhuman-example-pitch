@@ -8,6 +8,17 @@ import {
   VERCEL_UPLOAD_MAX_MB,
 } from "@/lib/upload-limits";
 
+function jsonError(
+  error: string,
+  status: number,
+  errorCode?: string
+): NextResponse {
+  return NextResponse.json(
+    { error, ...(errorCode ? { errorCode } : {}) },
+    { status }
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -18,31 +29,24 @@ export async function POST(request: NextRequest) {
     const userName = formData.get("userName") as string | null;
 
     if (!video) {
-      return NextResponse.json(
-        { error: "No video file provided" },
-        { status: 400 }
-      );
+      return jsonError("No video file provided", 400, "MISSING_VIDEO");
     }
 
     if (video.size > VERCEL_UPLOAD_MAX_BYTES) {
       const sizeMB = (video.size / (1024 * 1024)).toFixed(1);
-      return NextResponse.json(
-        {
-          error: `Compressed video is still too large (${sizeMB}MB). Maximum upload size is ${VERCEL_UPLOAD_MAX_MB}MB. Please record a shorter video.`,
-          errorCode: "UPLOAD_TOO_LARGE",
-        },
-        { status: 413 }
+      return jsonError(
+        `Compressed video is still too large (${sizeMB}MB). Maximum upload size is ${VERCEL_UPLOAD_MAX_MB}MB. Please record a shorter video.`,
+        413,
+        "UPLOAD_TOO_LARGE"
       );
     }
 
     if (video.size > MAX_UPLOAD_SIZE_BYTES) {
       const sizeMB = (video.size / (1024 * 1024)).toFixed(1);
-      return NextResponse.json(
-        {
-          error: `Video file is too large (${sizeMB}MB). Maximum size is ${MAX_UPLOAD_SIZE_MB}MB.`,
-          errorCode: "FILE_TOO_LARGE",
-        },
-        { status: 413 }
+      return jsonError(
+        `Video file is too large (${sizeMB}MB). Maximum size is ${MAX_UPLOAD_SIZE_MB}MB.`,
+        413,
+        "FILE_TOO_LARGE"
       );
     }
 
@@ -62,18 +66,36 @@ export async function POST(request: NextRequest) {
     console.error("Pitch analysis error:", error);
 
     if (error instanceof InterhumanAPIError) {
-      return NextResponse.json(
-        {
-          error: error.message,
-          errorCode: error.errorCode,
-        },
-        { status: error.statusCode || 500 }
+      if (error.errorCode === "MISSING_API_KEY") {
+        return jsonError(
+          "Pitch analysis is not configured on the server (missing INTERHUMAN_API_KEY).",
+          500,
+          "MISSING_API_KEY"
+        );
+      }
+
+      return jsonError(
+        error.message || "Interhuman analysis failed. Please try again.",
+        error.statusCode || 500,
+        error.errorCode
       );
     }
 
-    return NextResponse.json(
-      { error: "Failed to analyze pitch. Please try again." },
-      { status: 500 }
+    const message =
+      error instanceof Error ? error.message : "Unknown server error";
+
+    if (message.includes("INTERHUMAN_API_KEY")) {
+      return jsonError(
+        "Pitch analysis is not configured on the server (missing INTERHUMAN_API_KEY).",
+        500,
+        "MISSING_API_KEY"
+      );
+    }
+
+    return jsonError(
+      message || "Failed to analyze pitch. Please try again.",
+      500,
+      "ANALYSIS_FAILED"
     );
   }
 }
