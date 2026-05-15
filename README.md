@@ -69,7 +69,7 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `INTERHUMAN_API_KEY` | Yes | Your Interhuman API key (server-side only; do not use `NEXT_PUBLIC_*`) |
+| `INTERHUMAN_API_KEY` | Yes | Your Interhuman API key (server-side only; [get one](https://docs.interhuman.ai/how-to/get-api-key)) |
 | `NEXT_PUBLIC_SUPABASE_URL` | No | Supabase project URL (for leaderboard; required together with the next two) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Supabase publishable key (`sb_publishable_...`) |
 | `SUPABASE_SERVICE_ROLE_KEY` | No | Supabase secret key (`sb_secret_...`; server-side only; omitting it disables the leaderboard) |
@@ -133,7 +133,8 @@ src/
 │   ├── terms/page.tsx              # Terms of service
 │   ├── share/[id]/page.tsx         # Shareable results page
 │   └── api/
-│       ├── pitch/analyze/route.ts  # Video analysis endpoint
+│       ├── pitch/token/route.ts    # Upload auth for direct Interhuman uploads
+│       ├── pitch/complete/route.ts # Score + leaderboard after analysis
 │       ├── leaderboard/route.ts    # Leaderboard API
 │       └── share/image/route.tsx   # Share card image generation
 ├── components/
@@ -161,17 +162,17 @@ supabase/
 The app uses Interhuman AI's video analysis API to detect social signals and calculated conversation quality scores. Here's a simplified example of how the integration works:
 
 ```typescript
-// lib/interhuman.ts
+// Browser uploads directly to Interhuman (up to 32MB), then scores via our API
 const response = await fetch("https://api.interhuman.ai/v1/upload/analyze", {
   method: "POST",
   headers: {
-    Authorization: `Bearer ${process.env.INTERHUMAN_API_KEY}`,
+    Authorization: `Bearer ${apiKey}`, // from POST /api/pitch/token
   },
-  body: formData, // Contains the video file
+  body: formData,
 });
 
 const analysis = await response.json();
-// Returns: engagement_state, signals
+// Returns: engagement_states, signals, conversation_quality
 ```
 
 The API returns:

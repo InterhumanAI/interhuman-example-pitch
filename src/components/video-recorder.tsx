@@ -13,8 +13,10 @@ import {
   StoredVideo,
 } from "@/lib/video-storage";
 
-const MAX_FILE_SIZE_MB = 32;
-const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+import {
+  MAX_UPLOAD_SIZE_BYTES,
+  MAX_UPLOAD_SIZE_MB,
+} from "@/lib/upload-limits";
 
 interface VideoRecorderProps {
   maxDuration?: number;
@@ -137,13 +139,13 @@ export function VideoRecorder({
     recorder.onstop = (blob) => {
       setRecordedBlob(blob);
 
-      if (blob.size > MAX_FILE_SIZE_BYTES) {
+      if (blob.size > MAX_UPLOAD_SIZE_BYTES) {
         setFileSizeWarning(
-          `Video is ${formatStorageSize(blob.size)} (max ${MAX_FILE_SIZE_MB}MB). Please record a shorter video.`
+          `Video is ${formatStorageSize(blob.size)} (max ${MAX_UPLOAD_SIZE_MB}MB). Please record a shorter video.`
         );
-      } else if (blob.size > MAX_FILE_SIZE_BYTES * 0.8) {
+      } else if (blob.size > MAX_UPLOAD_SIZE_BYTES * 0.8) {
         setFileSizeWarning(
-          `Video is ${formatStorageSize(blob.size)}. Close to the ${MAX_FILE_SIZE_MB}MB limit.`
+          `Video is ${formatStorageSize(blob.size)}. Close to the ${MAX_UPLOAD_SIZE_MB}MB limit.`
         );
       }
     };
@@ -226,9 +228,9 @@ export function VideoRecorder({
   const handleSubmit = useCallback(async () => {
     if (!recordedBlob) return;
 
-    if (recordedBlob.size > MAX_FILE_SIZE_BYTES) {
+    if (recordedBlob.size > MAX_UPLOAD_SIZE_BYTES) {
       setError(
-        `Video file is too large (${formatStorageSize(recordedBlob.size)}). Maximum size is ${MAX_FILE_SIZE_MB}MB. Please record a shorter video.`
+        `Video file is too large (${formatStorageSize(recordedBlob.size)}). Maximum size is ${MAX_UPLOAD_SIZE_MB}MB. Please record a shorter video.`
       );
       return;
     }
@@ -276,7 +278,7 @@ export function VideoRecorder({
 
   const timeRemaining = maxDuration - duration;
   const isNearEnd = timeRemaining <= 10 && isRecording;
-  const isFileTooLarge = !!(recordedBlob && recordedBlob.size > MAX_FILE_SIZE_BYTES);
+  const isFileTooLarge = !!(recordedBlob && recordedBlob.size > MAX_UPLOAD_SIZE_BYTES);
 
   return (
     <div className={cn("flex flex-col items-center gap-4", className)}>

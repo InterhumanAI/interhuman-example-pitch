@@ -11,6 +11,7 @@ import { InterhumanAnalysisResponse, PitchScore } from "@/types";
 import { ArrowLeft, Loader2, Timer, Trophy, Zap, CheckCircle, FolderOpen, Play, X } from "lucide-react";
 import { CHALLENGE_STATS_STORAGE_KEY } from "@/lib/brand";
 import { getAllVideos, StoredVideo, formatStorageSize } from "@/lib/video-storage";
+import { submitPitchAnalysis } from "@/lib/submit-pitch-analysis";
 
 type PageState = "intro" | "record" | "analyzing" | "results" | "select-video";
 
@@ -54,24 +55,12 @@ export default function ChallengePage() {
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append("video", blob, "pitch.webm");
-      formData.append("duration", recordedDuration.toString());
-      formData.append("mode", "one_minute_challenge");
-      if (userName.trim()) {
-        formData.append("userName", userName.trim());
-      }
-
-      const response = await fetch("/api/pitch/analyze", {
-        method: "POST",
-        body: formData,
+      const data = await submitPitchAnalysis({
+        blob,
+        duration: recordedDuration,
+        mode: "one_minute_challenge",
+        userName: userName.trim() || undefined,
       });
-
-      if (!response.ok) {
-        throw new Error("Failed to analyze pitch");
-      }
-
-      const data = await response.json();
       setAnalysis(data.analysis);
       setPitchScore(data.score);
       setSavedToLeaderboard(data.savedToLeaderboard || false);
@@ -81,7 +70,7 @@ export default function ChallengePage() {
       saveUserStats(data.score.composite);
     } catch (err) {
       console.error("Analysis error:", err);
-      setError("Failed to analyze your pitch. Please try again.");
+      setError(err instanceof Error ? err.message : "Failed to analyze your pitch. Please try again.");
       setPageState("record");
     }
   };
@@ -129,24 +118,13 @@ export default function ChallengePage() {
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append("video", selectedVideo.blob, "pitch.webm");
-      formData.append("duration", selectedVideo.duration.toString());
-      formData.append("mode", "one_minute_challenge");
-      if (userName.trim()) {
-        formData.append("userName", userName.trim());
-      }
-
-      const response = await fetch("/api/pitch/analyze", {
-        method: "POST",
-        body: formData,
+      const data = await submitPitchAnalysis({
+        blob: selectedVideo.blob,
+        duration: selectedVideo.duration,
+        mode: "one_minute_challenge",
+        videoId: selectedVideo.id,
+        userName: userName.trim() || undefined,
       });
-
-      if (!response.ok) {
-        throw new Error("Failed to analyze pitch");
-      }
-
-      const data = await response.json();
       setAnalysis(data.analysis);
       setPitchScore(data.score);
       setSavedToLeaderboard(data.savedToLeaderboard || false);
@@ -155,7 +133,7 @@ export default function ChallengePage() {
       saveUserStats(data.score.composite);
     } catch (err) {
       console.error("Analysis error:", err);
-      setError("Failed to analyze your pitch. Please try again.");
+      setError(err instanceof Error ? err.message : "Failed to analyze your pitch. Please try again.");
       setPageState("select-video");
     }
   };

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InterhumanAnalysisResponse, PitchScore } from "@/types";
 import { StoredVideo, updateVideoAnalyzed } from "@/lib/video-storage";
+import { submitPitchAnalysis } from "@/lib/submit-pitch-analysis";
 import { ArrowLeft, Loader2 } from "lucide-react";
 
 type PageState = "record" | "analyzing" | "results";
@@ -30,22 +31,12 @@ export default function RecordPitchPage() {
     setCurrentVideoBlob(blob);
 
     try {
-      const formData = new FormData();
-      formData.append("video", blob, "pitch.webm");
-      formData.append("duration", recordedDuration.toString());
-      formData.append("mode", "free_pitch");
-
-      const response = await fetch("/api/pitch/analyze", {
-        method: "POST",
-        body: formData,
+      const data = await submitPitchAnalysis({
+        blob,
+        duration: recordedDuration,
+        mode: "free_pitch",
+        videoId,
       });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to analyze pitch");
-      }
-
-      const data = await response.json();
       setAnalysis(data.analysis);
       setPitchScore(data.score);
       setPageState("results");
