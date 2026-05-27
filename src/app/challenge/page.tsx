@@ -12,7 +12,6 @@ import { ArrowLeft, Loader2, Timer, Trophy, Zap, CheckCircle, FolderOpen, Play, 
 import { CHALLENGE_STATS_STORAGE_KEY } from "@/lib/brand";
 import { getAllVideos, StoredVideo, formatStorageSize } from "@/lib/video-storage";
 import { submitPitchAnalysis } from "@/lib/submit-pitch-analysis";
-import { formatCompressionStatus } from "@/lib/video-compression";
 
 type PageState = "intro" | "record" | "analyzing" | "results" | "select-video";
 
@@ -63,8 +62,11 @@ export default function ChallengePage() {
         duration: recordedDuration,
         mode: "one_minute_challenge",
         userName: userName.trim() || undefined,
-        onCompressProgress: (update) =>
-          setCompressStatus(formatCompressionStatus(update)),
+        onStreamCallbacks: {
+          onConnecting: () => setCompressStatus("Connecting to analysis service…"),
+          onStreaming: () => setCompressStatus("Streaming video for analysis…"),
+          onProcessing: () => setCompressStatus("Finalizing results…"),
+        },
       });
       setAnalysis(data.analysis);
       setPitchScore(data.score);
@@ -130,8 +132,11 @@ export default function ChallengePage() {
         mode: "one_minute_challenge",
         videoId: selectedVideo.id,
         userName: userName.trim() || undefined,
-        onCompressProgress: (update) =>
-          setCompressStatus(formatCompressionStatus(update)),
+        onStreamCallbacks: {
+          onConnecting: () => setCompressStatus("Connecting to analysis service…"),
+          onStreaming: () => setCompressStatus("Streaming video for analysis…"),
+          onProcessing: () => setCompressStatus("Finalizing results…"),
+        },
       });
       setAnalysis(data.analysis);
       setPitchScore(data.score);
@@ -425,7 +430,7 @@ export default function ChallengePage() {
             <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
             <h2 className="text-xl font-semibold mb-2">Processing your pitch...</h2>
             <p className="text-muted-foreground">
-              {compressStatus || "Preparing video for upload…"}
+              {compressStatus || "Streaming video for analysis…"}
             </p>
             <p className="text-muted-foreground text-sm mt-2">
               Then analyzing your score

@@ -10,7 +10,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InterhumanAnalysisResponse, PitchScore } from "@/types";
 import { StoredVideo, updateVideoAnalyzed } from "@/lib/video-storage";
 import { submitPitchAnalysis } from "@/lib/submit-pitch-analysis";
-import { formatCompressionStatus } from "@/lib/video-compression";
 import { ArrowLeft, Loader2 } from "lucide-react";
 
 type PageState = "record" | "analyzing" | "results";
@@ -39,8 +38,12 @@ export default function RecordPitchPage() {
         duration: recordedDuration,
         mode: "free_pitch",
         videoId,
-        onCompressProgress: (update) =>
-          setCompressStatus(formatCompressionStatus(update)),
+        onStreamCallbacks: {
+          onConnecting: () => setCompressStatus("Connecting to analysis service…"),
+          onStreaming: () => setCompressStatus("Streaming video for analysis…"),
+          onProcessing: () => setCompressStatus("Finalizing results…"),
+          onError: (msg) => setCompressStatus(`Stream error: ${msg}`),
+        },
       });
       setAnalysis(data.analysis);
       setPitchScore(data.score);
@@ -181,12 +184,9 @@ export default function RecordPitchPage() {
         {pageState === "analyzing" && (
           <div className="flex flex-col items-center justify-center py-20">
             <Loader2 className="w-12 h-12 text-primary animate-spin mb-4" />
-            <h2 className="text-xl font-semibold mb-2">Processing your pitch...</h2>
+            <h2 className="text-xl font-semibold mb-2">Analyzing your pitch...</h2>
             <p className="text-muted-foreground text-sm mt-1">
-              {compressStatus || "Preparing video for upload…"}
-            </p>
-            <p className="text-muted-foreground">
-              Then running analysis (usually 30–60 seconds)
+              {compressStatus || "Preparing…"}
             </p>
           </div>
         )}

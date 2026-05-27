@@ -3,8 +3,7 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { cn, formatDuration } from "@/lib/utils";
-import { Video, Square, Circle, RotateCcw, Upload, AlertTriangle, Save, CheckCircle } from "lucide-react";
-import { ResizingMediaRecorder, COMPRESSION_PRESETS } from "@/lib/video-compression";
+import { Video, Square, Circle, RotateCcw, Upload, Save, CheckCircle } from "lucide-react";
 import {
   saveVideo,
   generateVideoId,
@@ -12,12 +11,6 @@ import {
   formatStorageSize,
   StoredVideo,
 } from "@/lib/video-storage";
-
-import {
-  LARGE_RECORDING_WARNING_BYTES,
-  MAX_UPLOAD_SIZE_BYTES,
-  MAX_UPLOAD_SIZE_MB,
-} from "@/lib/upload-limits";
 
 interface VideoRecorderProps {
   maxDuration?: number;
@@ -41,7 +34,8 @@ export function VideoRecorder({
   autoSave = true,
 }: VideoRecorderProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const resizingRecorderRef = useRef<ResizingMediaRecorder | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
   const [isRecording, setIsRecording] = useState(false);
@@ -51,7 +45,6 @@ export function VideoRecorder({
   const [countdown, setCountdown] = useState<number | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fileSizeWarning, setFileSizeWarning] = useState<string | null>(null);
   const [savedVideoId, setSavedVideoId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -129,40 +122,41 @@ export function VideoRecorder({
   const startRecordingActual = useCallback(async () => {
     if (!streamRef.current) return;
 
-    setFileSizeWarning(null);
     setSavedVideoId(null);
     setSaveSuccess(false);
+    chunksRef.current = [];
 
-    // Use resizing recorder for on-the-fly compression
-    const recorder = new ResizingMediaRecorder(COMPRESSION_PRESETS.aggressive);
-    resizingRecorderRef.current = recorder;
+    const mimeType = [
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm",
+    ].find((m) => MediaRecorder.isTypeSupported(m)) || "video/webm";
 
-    recorder.onstop = (blob) => {
-      setRecordedBlob(blob);
+    const recorder = new MediaRecorder(streamRef.current, {
+      mimeType,
+      videoBitsPerSecond: 2500000,
+      audioBitsPerSecond: 128000,
+    });
+    mediaRecorderRef.current = recorder;
 
-      if (blob.size > MAX_UPLOAD_SIZE_BYTES) {
-        setFileSizeWarning(
-          `Video is ${formatStorageSize(blob.size)} (max ${MAX_UPLOAD_SIZE_MB}MB). Please record a shorter video.`
-        );
-      } else if (blob.size > LARGE_RECORDING_WARNING_BYTES) {
-        setFileSizeWarning(
-          `Large recording (${formatStorageSize(blob.size)}) — compression may take a minute before analysis.`
-        );
-      } else if (blob.size > MAX_UPLOAD_SIZE_BYTES * 0.8) {
-        setFileSizeWarning(
-          `Video is ${formatStorageSize(blob.size)}. Close to the ${MAX_UPLOAD_SIZE_MB}MB limit.`
-        );
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        chunksRef.current.push(e.data);
       }
     };
 
-    recorder.onerror = (err) => {
-      console.error("Recording error:", err);
+    recorder.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: mimeType.split(";")[0] });
+      setRecordedBlob(blob);
+    };
+
+    recorder.onerror = () => {
       setError("Recording failed. Please try again.");
       setIsRecording(false);
     };
 
     try {
-      await recorder.start(streamRef.current);
+      recorder.start(1000);
       setIsRecording(true);
       setDuration(0);
     } catch (err) {
@@ -172,8 +166,8 @@ export function VideoRecorder({
   }, []);
 
   const stopRecording = useCallback(() => {
-    if (resizingRecorderRef.current && isRecording) {
-      resizingRecorderRef.current.stop();
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
       setIsRecording(false);
       setIsPaused(false);
     }
@@ -182,7 +176,6 @@ export function VideoRecorder({
   const resetRecording = useCallback(() => {
     setRecordedBlob(null);
     setDuration(0);
-    setFileSizeWarning(null);
     setSavedVideoId(null);
     setSaveSuccess(false);
     if (videoRef.current && streamRef.current) {
@@ -233,13 +226,6 @@ export function VideoRecorder({
   const handleSubmit = useCallback(async () => {
     if (!recordedBlob) return;
 
-    if (recordedBlob.size > MAX_UPLOAD_SIZE_BYTES) {
-      setError(
-        `Video file is too large (${formatStorageSize(recordedBlob.size)}). Maximum size is ${MAX_UPLOAD_SIZE_MB}MB. Please record a shorter video.`
-      );
-      return;
-    }
-
     // Auto-save before submitting if enabled and not already saved
     let videoId = savedVideoId;
     if (autoSave && !videoId) {
@@ -283,7 +269,6 @@ export function VideoRecorder({
 
   const timeRemaining = maxDuration - duration;
   const isNearEnd = timeRemaining <= 10 && isRecording;
-  const isFileTooLarge = !!(recordedBlob && recordedBlob.size > MAX_UPLOAD_SIZE_BYTES);
 
   return (
     <div className={cn("flex flex-col items-center gap-4", className)}>
@@ -358,20 +343,6 @@ export function VideoRecorder({
         )}
       </div>
 
-      {fileSizeWarning && (
-        <div
-          className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-lg text-sm",
-            isFileTooLarge
-              ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-              : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
-          )}
-        >
-          <AlertTriangle className="w-4 h-4 shrink-0" />
-          {fileSizeWarning}
-        </div>
-      )}
-
       {saveSuccess && (
         <div className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
           <CheckCircle className="w-4 h-4 shrink-0" />
@@ -431,7 +402,6 @@ export function VideoRecorder({
               size="xl"
               onClick={handleSubmit}
               className="gap-2"
-              disabled={isFileTooLarge}
             >
               <Upload className="w-5 h-5" />
               Analyze
