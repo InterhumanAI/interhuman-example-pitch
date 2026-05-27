@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { VideoRecorder } from "@/components/video-recorder";
 import { ResultsDisplay } from "@/components/results-display";
@@ -10,6 +10,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InterhumanAnalysisResponse, PitchScore } from "@/types";
 import { StoredVideo, updateVideoAnalyzed } from "@/lib/video-storage";
 import { submitPitchAnalysis } from "@/lib/submit-pitch-analysis";
+import { calculatePitchScore } from "@/lib/scoring";
+import { InterhumanStream } from "@/lib/interhuman-stream";
 import { ArrowLeft, Loader2 } from "lucide-react";
 
 type PageState = "record" | "analyzing" | "results";
@@ -24,13 +26,79 @@ export default function RecordPitchPage() {
   const [currentVideoBlob, setCurrentVideoBlob] = useState<Blob | null>(null);
   const [compressStatus, setCompressStatus] = useState<string | null>(null);
 
+  const liveStreamRef = useRef<InterhumanStream | null>(null);
+
+  const handleLiveAnalysisReady = useCallback((streamInstance: InterhumanStream) => {
+    liveStreamRef.current = streamInstance;
+  }, []);
+
   const analyzeVideo = async (blob: Blob, recordedDuration: number, videoId?: string) => {
-    setPageState("analyzing");
     setDuration(recordedDuration);
     setError(null);
     setCompressStatus(null);
     setCurrentVideoId(videoId || null);
     setCurrentVideoBlob(blob);
+
+    // If live streaming delivered results, use them directly
+    if (liveStreamRef.current) {
+      setPageState("analyzing");
+      setCompressStatus("Finalizing results…");
+
+      try {
+        const liveAnalysis = liveStreamRef.current.getAccumulatedResults();
+        liveStreamRef.current = null;
+
+        if (liveAnalysis.signals.length > 0) {
+          const scoreWithoutPercentile = calculatePitchScore(liveAnalysis, recordedDuration);
+          const score = { ...scoreWithoutPercentile, percentile: 50 };
+
+          // Persist to server
+          try {
+            const saveResponse = await fetch("/api/pitch/save-results", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                analysis: liveAnalysis,
+                score,
+                duration: recordedDuration,
+                mode: "free_pitch",
+                userName: null,
+                questionId: null,
+              }),
+            });
+            if (saveResponse.ok) {
+              const saveData = await saveResponse.json();
+              if (saveData.percentile != null) {
+                score.percentile = saveData.percentile;
+              }
+            }
+          } catch {
+            // Non-critical
+          }
+
+          setAnalysis(liveAnalysis);
+          setPitchScore(score);
+          setPageState("results");
+
+          if (videoId && score) {
+            try {
+              await updateVideoAnalyzed(videoId, score.composite, {
+                pitchScore: score,
+                signals: liveAnalysis.signals || [],
+              });
+            } catch {
+              // Non-critical
+            }
+          }
+          return;
+        }
+      } catch {
+        // Fall through to regular upload
+      }
+    }
+
+    // Fallback: upload-based analysis (WebSocket wasn't available or had no results)
+    setPageState("analyzing");
 
     try {
       const data = await submitPitchAnalysis({
@@ -40,16 +108,15 @@ export default function RecordPitchPage() {
         videoId,
         onStreamCallbacks: {
           onConnecting: () => setCompressStatus("Connecting to analysis service…"),
-          onStreaming: () => setCompressStatus("Streaming video for analysis…"),
+          onStreaming: () => setCompressStatus("Uploading video for analysis…"),
           onProcessing: () => setCompressStatus("Finalizing results…"),
-          onError: (msg) => setCompressStatus(`Stream error: ${msg}`),
+          onError: (msg) => setCompressStatus(`Error: ${msg}`),
         },
       });
       setAnalysis(data.analysis);
       setPitchScore(data.score);
       setPageState("results");
 
-      // Update the stored video with the full results
       if (videoId && data.score) {
         try {
           await updateVideoAnalyzed(videoId, data.score.composite, {
@@ -57,7 +124,7 @@ export default function RecordPitchPage() {
             signals: data.analysis.signals || [],
           });
         } catch {
-          // Non-critical, continue
+          // Non-critical
         }
       }
     } catch (err) {
@@ -72,7 +139,6 @@ export default function RecordPitchPage() {
   };
 
   const handleSavedVideoSelect = async (video: StoredVideo) => {
-    // If video has stored results, show them directly
     if (video.analyzed && video.analysisResult) {
       setDuration(video.duration);
       setPitchScore(video.analysisResult.pitchScore as PitchScore);
@@ -84,7 +150,7 @@ export default function RecordPitchPage() {
       setCurrentVideoBlob(video.blob);
       setPageState("results");
     } else {
-      // Otherwise, re-analyze
+      liveStreamRef.current = null;
       await analyzeVideo(video.blob, video.duration, video.id);
     }
   };
@@ -109,6 +175,7 @@ export default function RecordPitchPage() {
     setPitchScore(null);
     setCurrentVideoId(null);
     setCurrentVideoBlob(null);
+    liveStreamRef.current = null;
   };
 
   return (
@@ -153,9 +220,11 @@ export default function RecordPitchPage() {
                   <VideoRecorder
                     maxDuration={180}
                     onRecordingComplete={handleRecordingComplete}
+                    onLiveAnalysisReady={handleLiveAnalysisReady}
                     mode="free"
                     pitchMode="free_pitch"
                     autoSave={true}
+                    liveStream={true}
                   />
 
                   <div className="mt-8 p-6 bg-secondary/30 rounded-lg">

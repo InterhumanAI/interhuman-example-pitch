@@ -3,7 +3,7 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { cn, formatDuration } from "@/lib/utils";
-import { Video, Square, Circle, RotateCcw, Upload, Save, CheckCircle } from "lucide-react";
+import { Video, Square, Circle, RotateCcw, Upload, Save, CheckCircle, Wifi } from "lucide-react";
 import {
   saveVideo,
   generateVideoId,
@@ -11,6 +11,8 @@ import {
   formatStorageSize,
   StoredVideo,
 } from "@/lib/video-storage";
+import { InterhumanStream } from "@/lib/interhuman-stream";
+import type { SignalEntry } from "@/types";
 
 interface VideoRecorderProps {
   maxDuration?: number;
@@ -21,6 +23,10 @@ interface VideoRecorderProps {
   questionText?: string;
   className?: string;
   autoSave?: boolean;
+  /** If true, streams to Interhuman during recording for instant results */
+  liveStream?: boolean;
+  onLiveAnalysisReady?: (streamInstance: InterhumanStream) => void;
+  onLiveSignal?: (signals: SignalEntry[]) => void;
 }
 
 export function VideoRecorder({
@@ -32,11 +38,15 @@ export function VideoRecorder({
   questionText,
   className,
   autoSave = true,
+  liveStream = true,
+  onLiveAnalysisReady,
+  onLiveSignal,
 }: VideoRecorderProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const interhumanStreamRef = useRef<InterhumanStream | null>(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -48,6 +58,8 @@ export function VideoRecorder({
   const [savedVideoId, setSavedVideoId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [liveSignals, setLiveSignals] = useState<SignalEntry[]>([]);
 
   const startCamera = useCallback(async () => {
     try {
@@ -124,7 +136,34 @@ export function VideoRecorder({
 
     setSavedVideoId(null);
     setSaveSuccess(false);
+    setLiveSignals([]);
     chunksRef.current = [];
+
+    // Try to connect WebSocket for live streaming
+    let liveStreamConnected = false;
+    if (liveStream) {
+      try {
+        const ihStream = new InterhumanStream({
+          onSignal: (signals) => {
+            setLiveSignals((prev) => [...prev, ...signals]);
+            onLiveSignal?.(signals);
+          },
+          onError: (code, msg) => {
+            console.warn(`Live stream error [${code}]: ${msg}`);
+          },
+        });
+        await ihStream.connect({
+          include: ["conversation_quality_overall", "conversation_quality_timeline"],
+        });
+        interhumanStreamRef.current = ihStream;
+        liveStreamConnected = true;
+        setIsStreaming(true);
+      } catch (err) {
+        console.warn("Live streaming unavailable, will upload after recording:", err);
+        interhumanStreamRef.current = null;
+        setIsStreaming(false);
+      }
+    }
 
     const mimeType = [
       "video/webm;codecs=vp9,opus",
@@ -139,31 +178,52 @@ export function VideoRecorder({
     });
     mediaRecorderRef.current = recorder;
 
-    recorder.ondataavailable = (e) => {
+    recorder.ondataavailable = async (e) => {
       if (e.data.size > 0) {
         chunksRef.current.push(e.data);
+        // Send segment to Interhuman if live streaming
+        if (liveStreamConnected && interhumanStreamRef.current?.isConnected) {
+          const buffer = await e.data.arrayBuffer();
+          interhumanStreamRef.current.sendSegment(buffer);
+        }
       }
     };
 
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: mimeType.split(";")[0] });
       setRecordedBlob(blob);
+
+      // If streaming was active, close and notify that results are ready
+      if (interhumanStreamRef.current) {
+        setTimeout(() => {
+          if (interhumanStreamRef.current) {
+            interhumanStreamRef.current.close();
+            onLiveAnalysisReady?.(interhumanStreamRef.current);
+            setIsStreaming(false);
+          }
+        }, 2000); // brief wait for trailing events
+      }
     };
 
     recorder.onerror = () => {
       setError("Recording failed. Please try again.");
       setIsRecording(false);
+      if (interhumanStreamRef.current) {
+        interhumanStreamRef.current.close();
+        interhumanStreamRef.current = null;
+        setIsStreaming(false);
+      }
     };
 
     try {
-      recorder.start(1000);
+      recorder.start(3000); // 3-second segments for streaming
       setIsRecording(true);
       setDuration(0);
     } catch (err) {
       console.error("Failed to start recording:", err);
       setError("Failed to start recording. Please try again.");
     }
-  }, []);
+  }, [liveStream, onLiveAnalysisReady, onLiveSignal]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
@@ -178,6 +238,12 @@ export function VideoRecorder({
     setDuration(0);
     setSavedVideoId(null);
     setSaveSuccess(false);
+    setLiveSignals([]);
+    setIsStreaming(false);
+    if (interhumanStreamRef.current) {
+      interhumanStreamRef.current.close();
+      interhumanStreamRef.current = null;
+    }
     if (videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
     }
@@ -213,7 +279,6 @@ export function VideoRecorder({
       setSavedVideoId(videoId);
       setSaveSuccess(true);
 
-      // Reset success indicator after 3 seconds
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       console.error("Failed to save video:", err);
@@ -226,7 +291,6 @@ export function VideoRecorder({
   const handleSubmit = useCallback(async () => {
     if (!recordedBlob) return;
 
-    // Auto-save before submitting if enabled and not already saved
     let videoId = savedVideoId;
     if (autoSave && !videoId) {
       try {
@@ -301,8 +365,17 @@ export function VideoRecorder({
           </div>
         )}
 
+        {isRecording && isStreaming && (
+          <div className="absolute top-4 right-4 flex items-center gap-1.5">
+            <Wifi className="w-4 h-4 text-green-400" />
+            <span className="text-green-400 text-xs font-medium bg-black/50 px-2 py-0.5 rounded">
+              Live
+            </span>
+          </div>
+        )}
+
         {isRecording && mode === "challenge" && (
-          <div className="absolute top-4 right-4">
+          <div className={cn("absolute right-4", isStreaming ? "top-12" : "top-4")}>
             <span
               className={cn(
                 "font-mono text-lg px-3 py-1 rounded",
@@ -342,6 +415,24 @@ export function VideoRecorder({
           </div>
         )}
       </div>
+
+      {isRecording && liveSignals.length > 0 && (
+        <div className="w-full max-w-2xl flex flex-wrap gap-2">
+          {liveSignals.slice(-5).map((signal, i) => (
+            <span
+              key={`${signal.type}-${signal.start}-${i}`}
+              className={cn(
+                "text-xs px-2 py-1 rounded-full font-medium",
+                signal.probability === "high"
+                  ? "bg-primary/20 text-primary"
+                  : "bg-muted text-muted-foreground"
+              )}
+            >
+              {signal.type}
+            </span>
+          ))}
+        </div>
+      )}
 
       {saveSuccess && (
         <div className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
@@ -414,6 +505,7 @@ export function VideoRecorder({
         <p className="text-sm text-muted-foreground">
           {formatDuration(duration)} • {formatStorageSize(recordedBlob.size)}
           {savedVideoId && " • Saved locally"}
+          {isStreaming && " • Analysis streaming..."}
         </p>
       )}
 
