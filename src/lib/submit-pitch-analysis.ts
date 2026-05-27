@@ -3,7 +3,11 @@
 import { InterhumanStream } from "@/lib/interhuman-stream";
 import { calculatePitchScore } from "@/lib/scoring";
 import type { PitchAnalyzeApiResponse } from "@/types/pitch-api";
-import type { SignalEntry, EngagementStateEntry } from "@/types";
+import type {
+  InterhumanAnalysisResponse,
+  SignalEntry,
+  EngagementStateEntry,
+} from "@/types";
 
 export type { PitchAnalyzeApiResponse };
 
@@ -24,52 +28,36 @@ export type SubmitPitchAnalysisMeta = {
   userName?: string;
   questionId?: string;
   onStreamCallbacks?: StreamingAnalysisCallbacks;
-  onCompressProgress?: (update: unknown) => void; // kept for interface compat
+  onCompressProgress?: (update: unknown) => void;
 };
 
-const SEGMENT_DURATION_MS = 3000;
-
 /**
- * Stream the recorded video to Interhuman via WebSocket, bypassing Vercel's
- * 4.5MB body limit entirely. The video is split into 3-second segments and
- * sent directly from the browser to Interhuman's streaming endpoint.
+ * Analyze video by uploading directly from the browser to Interhuman,
+ * bypassing Vercel's 4.5MB serverless function body limit entirely.
+ *
+ * Strategy:
+ * 1. Try WebSocket streaming (real-time, best UX)
+ * 2. Fall back to direct REST upload to Interhuman from browser
  */
 export async function submitPitchAnalysis(
   meta: SubmitPitchAnalysisMeta
 ): Promise<PitchAnalyzeApiResponse> {
   const { blob, duration, mode, userName, questionId, onStreamCallbacks } = meta;
 
-  onStreamCallbacks?.onConnecting?.();
+  let analysis: InterhumanAnalysisResponse;
 
-  const stream = new InterhumanStream({
-    onSignal: (signals) => onStreamCallbacks?.onSignal?.(signals),
-    onEngagement: (entry) => onStreamCallbacks?.onEngagement?.(entry),
-    onError: (code, message) => {
-      console.error(`Interhuman stream error [${code}]: ${message}`);
-      onStreamCallbacks?.onError?.(message);
-    },
-  });
-
-  await stream.connect({
-    include: ["conversation_quality_overall", "conversation_quality_timeline"],
-  });
-
-  onStreamCallbacks?.onStreaming?.();
-
-  await streamBlobAsSegments(blob, stream, SEGMENT_DURATION_MS);
-
-  // Wait briefly for any trailing server events before closing
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-
-  stream.close();
+  try {
+    analysis = await analyzeViaWebSocket(blob, onStreamCallbacks);
+  } catch (wsError) {
+    console.warn("WebSocket streaming unavailable, falling back to direct upload:", wsError);
+    analysis = await analyzeViaDirectUpload(blob, onStreamCallbacks);
+  }
 
   onStreamCallbacks?.onProcessing?.();
 
-  const analysis = stream.getAccumulatedResults();
   const scoreWithoutPercentile = calculatePitchScore(analysis, duration);
   const score = { ...scoreWithoutPercentile, percentile: 50 };
 
-  // Save results to the server (lightweight JSON, well under 4.5MB)
   let pitchId: string | null = null;
   let scoreId: string | null = null;
   let savedToLeaderboard = false;
@@ -113,14 +101,91 @@ export async function submitPitchAnalysis(
 }
 
 /**
+ * Primary path: stream video segments over WebSocket for real-time analysis.
+ */
+async function analyzeViaWebSocket(
+  blob: Blob,
+  callbacks?: StreamingAnalysisCallbacks
+): Promise<InterhumanAnalysisResponse> {
+  callbacks?.onConnecting?.();
+
+  const stream = new InterhumanStream({
+    onSignal: (signals) => callbacks?.onSignal?.(signals),
+    onEngagement: (entry) => callbacks?.onEngagement?.(entry),
+    onError: (code, message) => {
+      console.error(`Interhuman stream error [${code}]: ${message}`);
+    },
+  });
+
+  await stream.connect({
+    include: ["conversation_quality_overall", "conversation_quality_timeline"],
+  });
+
+  callbacks?.onStreaming?.();
+
+  await streamBlobAsSegments(blob, stream);
+
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  stream.close();
+
+  return stream.getAccumulatedResults();
+}
+
+/**
+ * Fallback: upload the video directly from the browser to Interhuman's
+ * REST endpoint. Still bypasses Vercel (browser → Interhuman, up to 32MB).
+ */
+async function analyzeViaDirectUpload(
+  blob: Blob,
+  callbacks?: StreamingAnalysisCallbacks
+): Promise<InterhumanAnalysisResponse> {
+  callbacks?.onConnecting?.();
+
+  const tokenResponse = await fetch("/api/pitch/ws-token");
+  if (!tokenResponse.ok) {
+    throw new Error("Failed to obtain API token");
+  }
+  const { token } = await tokenResponse.json();
+
+  callbacks?.onStreaming?.();
+
+  const formData = new FormData();
+  formData.append("file", blob, "pitch.webm");
+  formData.append("include[]", "conversation_quality_overall");
+  formData.append("include[]", "conversation_quality_timeline");
+
+  const response = await fetch("https://api.interhuman.ai/v1/upload/analyze", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let message = `Analysis failed (${response.status})`;
+    try {
+      const errJson = JSON.parse(errorText);
+      if (errJson.message) message = errJson.message;
+    } catch {
+      // use default message
+    }
+    throw new Error(message);
+  }
+
+  return response.json();
+}
+
+/**
  * Re-record a blob into WebM segments and send them to the streaming endpoint.
- * Uses MediaRecorder to produce proper WebM chunks that Interhuman can decode.
  */
 async function streamBlobAsSegments(
   blob: Blob,
-  stream: InterhumanStream,
-  segmentMs: number
+  stream: InterhumanStream
 ): Promise<void> {
+  const SEGMENT_MS = 3000;
+
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
     video.muted = true;
@@ -166,7 +231,7 @@ async function streamBlobAsSegments(
           canvasStream.addTrack(audioTrack);
         }
       } catch {
-        // Continue without audio if not available
+        // Continue without audio
       }
 
       const mimeType = [
@@ -206,7 +271,7 @@ async function streamBlobAsSegments(
         }
       };
 
-      recorder.start(segmentMs);
+      recorder.start(SEGMENT_MS);
       video.play().then(drawFrame).catch((err) => {
         cleanup();
         reject(err);
