@@ -59,10 +59,23 @@ export class InterhumanStream {
     const { token } = await tokenResponse.json();
 
     return new Promise((resolve, reject) => {
-      this.ws = new WebSocket(WS_URL, token);
+      try {
+        this.ws = new WebSocket(WS_URL, token);
+      } catch (err) {
+        reject(new Error(`WebSocket creation failed: ${err}`));
+        return;
+      }
       this.ws.binaryType = "arraybuffer";
 
+      const timeout = setTimeout(() => {
+        if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+          this.ws.close();
+          reject(new Error("WebSocket connection timed out (5s)"));
+        }
+      }, 5000);
+
       this.ws.addEventListener("open", () => {
+        clearTimeout(timeout);
         const sessionConfig = config || {
           include: [
             "conversation_quality_overall",
@@ -80,11 +93,19 @@ export class InterhumanStream {
         this.handleMessage(event.data);
       });
 
-      this.ws.addEventListener("error", () => {
-        reject(new Error("WebSocket connection failed"));
+      this.ws.addEventListener("error", (event) => {
+        clearTimeout(timeout);
+        console.error("WebSocket error event:", event);
+        reject(new Error("WebSocket connection failed — check API key streaming access"));
       });
 
-      this.ws.addEventListener("close", () => {
+      this.ws.addEventListener("close", (event) => {
+        clearTimeout(timeout);
+        if (!this.sessionConfigSent) {
+          reject(new Error(
+            `WebSocket closed before session started (code: ${event.code}, reason: ${event.reason || "none"})`
+          ));
+        }
         this.callbacks.onClose?.();
       });
     });
