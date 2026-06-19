@@ -5,13 +5,23 @@ import type { InterhumanAnalysisResponse } from "@/types";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { analysis, duration, mode, userName, questionId } = body as {
+    const {
+      analysis,
+      duration,
+      mode,
+      userName,
+      questionId,
+      videoUrl,
+      videoPathname,
+    } = body as {
       analysis: InterhumanAnalysisResponse;
       score: unknown;
       duration: number;
       mode: string;
       userName: string | null;
       questionId: string | null;
+      videoUrl?: string | null;
+      videoPathname?: string | null;
     };
 
     if (!analysis || !analysis.signals) {
@@ -27,6 +37,8 @@ export async function POST(request: NextRequest) {
       mode: mode || "free_pitch",
       userName,
       questionId,
+      videoUrl: videoUrl ?? null,
+      videoPathname: videoPathname ?? null,
     });
 
     return NextResponse.json({

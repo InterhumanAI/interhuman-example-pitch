@@ -12,6 +12,7 @@ import { StoredVideo, updateVideoAnalyzed } from "@/lib/video-storage";
 import { submitPitchAnalysis } from "@/lib/submit-pitch-analysis";
 import { calculatePitchScore } from "@/lib/scoring";
 import { InterhumanStream } from "@/lib/interhuman-stream";
+import type { UploadedVideo } from "@/components/video-recorder";
 import { ArrowLeft, Loader2 } from "lucide-react";
 
 type PageState = "record" | "analyzing" | "results";
@@ -32,7 +33,12 @@ export default function RecordPitchPage() {
     liveStreamRef.current = streamInstance;
   }, []);
 
-  const analyzeVideo = async (blob: Blob, recordedDuration: number, videoId?: string) => {
+  const analyzeVideo = async (
+    blob: Blob,
+    recordedDuration: number,
+    videoId?: string,
+    uploaded?: UploadedVideo,
+  ) => {
     setDuration(recordedDuration);
     setError(null);
     setCompressStatus(null);
@@ -64,6 +70,8 @@ export default function RecordPitchPage() {
                 mode: "free_pitch",
                 userName: null,
                 questionId: null,
+                videoUrl: uploaded?.url ?? null,
+                videoPathname: uploaded?.pathname ?? null,
               }),
             });
             if (saveResponse.ok) {
@@ -106,6 +114,8 @@ export default function RecordPitchPage() {
         duration: recordedDuration,
         mode: "free_pitch",
         videoId,
+        uploadedVideoUrl: uploaded?.url,
+        uploadedVideoPathname: uploaded?.pathname,
         onStreamCallbacks: {
           onConnecting: () => setCompressStatus("Connecting to analysis service…"),
           onStreaming: () => setCompressStatus("Uploading video for analysis…"),
@@ -134,8 +144,13 @@ export default function RecordPitchPage() {
     }
   };
 
-  const handleRecordingComplete = async (blob: Blob, recordedDuration: number, videoId?: string) => {
-    await analyzeVideo(blob, recordedDuration, videoId);
+  const handleRecordingComplete = async (
+    blob: Blob,
+    recordedDuration: number,
+    videoId?: string,
+    uploaded?: UploadedVideo,
+  ) => {
+    await analyzeVideo(blob, recordedDuration, videoId, uploaded);
   };
 
   const handleSavedVideoSelect = async (video: StoredVideo) => {

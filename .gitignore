@@ -43,3 +43,6 @@ prisma/*.db-journal
 
 # Uploaded videos (local dev)
 uploads/
+
+# Playwright MCP debug artifacts
+.playwright-mcp/

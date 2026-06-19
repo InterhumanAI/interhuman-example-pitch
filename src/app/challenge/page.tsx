@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { VideoRecorder } from "@/components/video-recorder";
 import { ResultsDisplay } from "@/components/results-display";
@@ -12,6 +12,9 @@ import { ArrowLeft, Loader2, Timer, Trophy, Zap, CheckCircle, FolderOpen, Play, 
 import { CHALLENGE_STATS_STORAGE_KEY } from "@/lib/brand";
 import { getAllVideos, StoredVideo, formatStorageSize } from "@/lib/video-storage";
 import { submitPitchAnalysis } from "@/lib/submit-pitch-analysis";
+import { calculatePitchScore } from "@/lib/scoring";
+import { InterhumanStream } from "@/lib/interhuman-stream";
+import type { UploadedVideo } from "@/components/video-recorder";
 
 type PageState = "intro" | "record" | "analyzing" | "results" | "select-video";
 
@@ -27,6 +30,12 @@ export default function ChallengePage() {
   const [selectedVideo, setSelectedVideo] = useState<StoredVideo | null>(null);
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [compressStatus, setCompressStatus] = useState<string | null>(null);
+
+  const liveStreamRef = useRef<InterhumanStream | null>(null);
+
+  const handleLiveAnalysisReady = useCallback((streamInstance: InterhumanStream) => {
+    liveStreamRef.current = streamInstance;
+  }, []);
 
   const saveUserStats = (newScore: number) => {
     try {
@@ -50,18 +59,76 @@ export default function ChallengePage() {
     }
   };
 
-  const handleRecordingComplete = async (blob: Blob, recordedDuration: number) => {
+  const handleRecordingComplete = async (
+    blob: Blob,
+    recordedDuration: number,
+    _videoId?: string,
+    uploaded?: UploadedVideo,
+  ) => {
     setPageState("analyzing");
     setDuration(recordedDuration);
     setError(null);
     setCompressStatus(null);
 
+    // If the recorder was streaming live, the relay already accumulated
+    // signals/engagement/quality during the 60s — reuse those rather than
+    // opening a second session and re-streaming the saved blob.
+    if (liveStreamRef.current) {
+      setCompressStatus("Finalizing results…");
+      try {
+        const liveAnalysis = liveStreamRef.current.getAccumulatedResults();
+        liveStreamRef.current = null;
+
+        if (liveAnalysis.signals.length > 0) {
+          const scoreWithoutPercentile = calculatePitchScore(liveAnalysis, recordedDuration);
+          const score = { ...scoreWithoutPercentile, percentile: 50 };
+
+          let leaderboardSaved = false;
+          try {
+            const saveResponse = await fetch("/api/pitch/save-results", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                analysis: liveAnalysis,
+                score,
+                duration: recordedDuration,
+                mode: "one_minute_challenge",
+                userName: userName.trim() || null,
+                questionId: null,
+                videoUrl: uploaded?.url ?? null,
+                videoPathname: uploaded?.pathname ?? null,
+              }),
+            });
+            if (saveResponse.ok) {
+              const saveData = await saveResponse.json();
+              if (saveData.percentile != null) score.percentile = saveData.percentile;
+              leaderboardSaved = !!saveData.savedToLeaderboard;
+            }
+          } catch {
+            // Non-critical: results still display
+          }
+
+          setAnalysis(liveAnalysis);
+          setPitchScore(score);
+          setSavedToLeaderboard(leaderboardSaved);
+          setPageState("results");
+          saveUserStats(score.composite);
+          return;
+        }
+      } catch (err) {
+        console.warn("Live analysis unusable, falling back to upload:", err);
+      }
+    }
+
+    // Fallback: live stream wasn't available or returned nothing usable
     try {
       const data = await submitPitchAnalysis({
         blob,
         duration: recordedDuration,
         mode: "one_minute_challenge",
         userName: userName.trim() || undefined,
+        uploadedVideoUrl: uploaded?.url,
+        uploadedVideoPathname: uploaded?.pathname,
         onStreamCallbacks: {
           onConnecting: () => setCompressStatus("Connecting to analysis service…"),
           onStreaming: () => setCompressStatus("Streaming video for analysis…"),
@@ -73,7 +140,6 @@ export default function ChallengePage() {
       setSavedToLeaderboard(data.savedToLeaderboard || false);
       setPageState("results");
 
-      // Save stats to localStorage for the leaderboard page
       saveUserStats(data.score.composite);
     } catch (err) {
       console.error("Analysis error:", err);
@@ -89,6 +155,7 @@ export default function ChallengePage() {
     setSavedToLeaderboard(false);
     setSelectedVideo(null);
     setError(null);
+    liveStreamRef.current = null;
   };
 
   const startChallenge = () => {
@@ -119,7 +186,8 @@ export default function ChallengePage() {
 
   const submitSelectedVideo = async () => {
     if (!selectedVideo) return;
-    
+
+    liveStreamRef.current = null;
     setPageState("analyzing");
     setDuration(selectedVideo.duration);
     setError(null);
@@ -420,7 +488,10 @@ export default function ChallengePage() {
             <VideoRecorder
               maxDuration={60}
               onRecordingComplete={handleRecordingComplete}
+              onLiveAnalysisReady={handleLiveAnalysisReady}
               mode="challenge"
+              pitchMode="one_minute_challenge"
+              liveStream={true}
             />
           </div>
         )}

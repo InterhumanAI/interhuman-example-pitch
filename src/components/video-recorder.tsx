@@ -12,11 +12,22 @@ import {
   StoredVideo,
 } from "@/lib/video-storage";
 import { InterhumanStream } from "@/lib/interhuman-stream";
+import { uploadInChunks } from "@/lib/uploads/multipart-upload";
 import type { SignalEntry } from "@/types";
+
+export interface UploadedVideo {
+  url: string;
+  pathname: string;
+}
 
 interface VideoRecorderProps {
   maxDuration?: number;
-  onRecordingComplete: (blob: Blob, duration: number, videoId?: string) => void;
+  onRecordingComplete: (
+    blob: Blob,
+    duration: number,
+    videoId?: string,
+    uploaded?: UploadedVideo,
+  ) => void;
   mode?: "free" | "challenge";
   pitchMode?: "free_pitch" | "one_minute_challenge" | "qa_practice";
   questionId?: string;
@@ -27,6 +38,7 @@ interface VideoRecorderProps {
   liveStream?: boolean;
   onLiveAnalysisReady?: (streamInstance: InterhumanStream) => void;
   onLiveSignal?: (signals: SignalEntry[]) => void;
+  onUploaded?: (uploaded: UploadedVideo) => void;
 }
 
 export function VideoRecorder({
@@ -41,6 +53,7 @@ export function VideoRecorder({
   liveStream = true,
   onLiveAnalysisReady,
   onLiveSignal,
+  onUploaded,
 }: VideoRecorderProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -60,6 +73,9 @@ export function VideoRecorder({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [liveSignals, setLiveSignals] = useState<SignalEntry[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedVideo, setUploadedVideo] = useState<UploadedVideo | null>(null);
+  const uploadPromiseRef = useRef<Promise<UploadedVideo | null> | null>(null);
 
   const startCamera = useCallback(async () => {
     try {
@@ -178,13 +194,12 @@ export function VideoRecorder({
     });
     mediaRecorderRef.current = recorder;
 
-    recorder.ondataavailable = async (e) => {
+    recorder.ondataavailable = (e) => {
       if (e.data.size > 0) {
         chunksRef.current.push(e.data);
-        // Send segment to Interhuman if live streaming
+        // Forward as a Blob — the stream needs to peek at the WebM init segment.
         if (liveStreamConnected && interhumanStreamRef.current?.isConnected) {
-          const buffer = await e.data.arrayBuffer();
-          interhumanStreamRef.current.sendSegment(buffer);
+          void interhumanStreamRef.current.sendSegment(e.data);
         }
       }
     };
@@ -192,6 +207,8 @@ export function VideoRecorder({
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: mimeType.split(";")[0] });
       setRecordedBlob(blob);
+
+      const auth = interhumanStreamRef.current?.getAuth() ?? null;
 
       // If streaming was active, close and notify that results are ready
       if (interhumanStreamRef.current) {
@@ -202,6 +219,37 @@ export function VideoRecorder({
             setIsStreaming(false);
           }
         }, 2000); // brief wait for trailing events
+      }
+
+      // Kick off the durable Blob upload while the user reviews the recording.
+      // Re-uses the relay session auth so we never expose BLOB_READ_WRITE_TOKEN
+      // to the browser; the session stays valid for ~10 min in the relay.
+      if (auth && blob.size > 0) {
+        setIsUploading(true);
+        const pathname = `pitches/${pitchMode}-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 8)}.webm`;
+        const promise = uploadInChunks({
+          blob,
+          pathname,
+          streamSessionId: auth.sessionId,
+          streamToken: auth.token,
+          contentType: "video/webm",
+        })
+          .then((result) => {
+            const uploaded: UploadedVideo = result;
+            setUploadedVideo(uploaded);
+            onUploaded?.(uploaded);
+            return uploaded;
+          })
+          .catch((err) => {
+            console.warn("Multipart upload failed:", err);
+            return null;
+          })
+          .finally(() => {
+            setIsUploading(false);
+          });
+        uploadPromiseRef.current = promise;
       }
     };
 
@@ -240,6 +288,8 @@ export function VideoRecorder({
     setSaveSuccess(false);
     setLiveSignals([]);
     setIsStreaming(false);
+    setUploadedVideo(null);
+    uploadPromiseRef.current = null;
     if (interhumanStreamRef.current) {
       interhumanStreamRef.current.close();
       interhumanStreamRef.current = null;
@@ -320,8 +370,13 @@ export function VideoRecorder({
       }
     }
 
-    onRecordingComplete(recordedBlob, duration, videoId || undefined);
-  }, [recordedBlob, duration, onRecordingComplete, autoSave, savedVideoId, pitchMode, questionId, questionText]);
+    let uploaded: UploadedVideo | null = uploadedVideo;
+    if (!uploaded && uploadPromiseRef.current) {
+      uploaded = await uploadPromiseRef.current;
+    }
+
+    onRecordingComplete(recordedBlob, duration, videoId || undefined, uploaded || undefined);
+  }, [recordedBlob, duration, onRecordingComplete, autoSave, savedVideoId, pitchMode, questionId, questionText, uploadedVideo]);
 
   useEffect(() => {
     if (recordedBlob && videoRef.current) {
@@ -506,6 +561,8 @@ export function VideoRecorder({
           {formatDuration(duration)} • {formatStorageSize(recordedBlob.size)}
           {savedVideoId && " • Saved locally"}
           {isStreaming && " • Analysis streaming..."}
+          {isUploading && " • Uploading..."}
+          {uploadedVideo && !isUploading && " • Uploaded"}
         </p>
       )}
 

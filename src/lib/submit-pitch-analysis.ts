@@ -1,6 +1,7 @@
 "use client";
 
 import { InterhumanStream } from "@/lib/interhuman-stream";
+import { uploadInChunks } from "@/lib/uploads/multipart-upload";
 import { calculatePitchScore } from "@/lib/scoring";
 import type { PitchAnalyzeApiResponse } from "@/types/pitch-api";
 import type {
@@ -27,36 +28,84 @@ export type SubmitPitchAnalysisMeta = {
   videoId?: string;
   userName?: string;
   questionId?: string;
+  /** If the recorder already uploaded the blob, skip the multipart re-upload. */
+  uploadedVideoUrl?: string;
+  uploadedVideoPathname?: string;
   onStreamCallbacks?: StreamingAnalysisCallbacks;
-  onCompressProgress?: (update: unknown) => void;
 };
 
 /**
- * Analyze video by uploading directly from the browser to Interhuman,
- * bypassing Vercel's 4.5MB serverless function body limit entirely.
+ * Analyze a saved/recorded video blob via the server-side Interhuman relay.
  *
- * Strategy:
- * 1. Try WebSocket streaming (real-time, best UX)
- * 2. Fall back to direct REST upload to Interhuman from browser
+ * No part of this path ships INTERHUMAN_API_KEY or BLOB_READ_WRITE_TOKEN to
+ * the browser. Streaming and Vercel Blob uploads share the same opaque
+ * session token issued by `/api/stream/start`.
  */
 export async function submitPitchAnalysis(
-  meta: SubmitPitchAnalysisMeta
+  meta: SubmitPitchAnalysisMeta,
 ): Promise<PitchAnalyzeApiResponse> {
-  const { blob, duration, mode, userName, questionId, onStreamCallbacks } = meta;
+  const {
+    blob,
+    duration,
+    mode,
+    userName,
+    questionId,
+    uploadedVideoUrl,
+    uploadedVideoPathname,
+    onStreamCallbacks,
+  } = meta;
 
-  let analysis: InterhumanAnalysisResponse;
+  const stream = new InterhumanStream({
+    onSignal: (signals) => onStreamCallbacks?.onSignal?.(signals),
+    onEngagement: (entry) => onStreamCallbacks?.onEngagement?.(entry),
+    onError: (code, message) => {
+      console.error(`Interhuman stream error [${code}]: ${message}`);
+      onStreamCallbacks?.onError?.(message);
+    },
+  });
 
-  try {
-    analysis = await analyzeViaWebSocket(blob, onStreamCallbacks);
-  } catch (wsError) {
-    console.warn("WebSocket streaming unavailable, falling back to direct upload:", wsError);
-    analysis = await analyzeViaDirectUpload(blob, onStreamCallbacks);
-  }
+  onStreamCallbacks?.onConnecting?.();
+  await stream.connect({
+    include: ["conversation_quality_overall", "conversation_quality_timeline"],
+  });
+
+  onStreamCallbacks?.onStreaming?.();
+
+  // Run the relay stream and the durable Blob upload in parallel — neither
+  // depends on the other and the user shouldn't pay for them sequentially.
+  const auth = stream.getAuth();
+  const uploadPromise: Promise<{ url: string; pathname: string } | null> =
+    uploadedVideoUrl && uploadedVideoPathname
+      ? Promise.resolve({ url: uploadedVideoUrl, pathname: uploadedVideoPathname })
+      : auth
+        ? uploadInChunks({
+            blob,
+            pathname: `pitches/${mode}-${Date.now()}-${Math.random()
+              .toString(36)
+              .slice(2, 8)}.webm`,
+            streamSessionId: auth.sessionId,
+            streamToken: auth.token,
+            contentType: "video/webm",
+          }).catch((err) => {
+            console.warn("Multipart upload failed:", err);
+            return null;
+          })
+        : Promise.resolve(null);
+
+  await streamBlobThroughRelay(blob, stream);
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  stream.close();
+
+  const analysis = stream.getAccumulatedResults();
 
   onStreamCallbacks?.onProcessing?.();
 
   const scoreWithoutPercentile = calculatePitchScore(analysis, duration);
   const score = { ...scoreWithoutPercentile, percentile: 50 };
+
+  const uploaded = await uploadPromise;
+  const videoUrl = uploaded?.url ?? null;
+  const videoPathname = uploaded?.pathname ?? null;
 
   let pitchId: string | null = null;
   let scoreId: string | null = null;
@@ -73,6 +122,8 @@ export async function submitPitchAnalysis(
         mode,
         userName: userName || null,
         questionId: questionId || null,
+        videoUrl,
+        videoPathname,
       }),
     });
 
@@ -101,88 +152,14 @@ export async function submitPitchAnalysis(
 }
 
 /**
- * Primary path: stream video segments over WebSocket for real-time analysis.
+ * Re-encode a saved blob into fresh MediaRecorder segments and forward them
+ * through the Interhuman relay. Each segment is decodable on its own (the
+ * stream client lazily extracts and re-prepends the WebM init segment on the
+ * client side, then the relay forwards to the upstream WS).
  */
-async function analyzeViaWebSocket(
+async function streamBlobThroughRelay(
   blob: Blob,
-  callbacks?: StreamingAnalysisCallbacks
-): Promise<InterhumanAnalysisResponse> {
-  callbacks?.onConnecting?.();
-
-  const stream = new InterhumanStream({
-    onSignal: (signals) => callbacks?.onSignal?.(signals),
-    onEngagement: (entry) => callbacks?.onEngagement?.(entry),
-    onError: (code, message) => {
-      console.error(`Interhuman stream error [${code}]: ${message}`);
-    },
-  });
-
-  await stream.connect({
-    include: ["conversation_quality_overall", "conversation_quality_timeline"],
-  });
-
-  callbacks?.onStreaming?.();
-
-  await streamBlobAsSegments(blob, stream);
-
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-  stream.close();
-
-  return stream.getAccumulatedResults();
-}
-
-/**
- * Fallback: upload the video directly from the browser to Interhuman's
- * REST endpoint. Still bypasses Vercel (browser → Interhuman, up to 32MB).
- */
-async function analyzeViaDirectUpload(
-  blob: Blob,
-  callbacks?: StreamingAnalysisCallbacks
-): Promise<InterhumanAnalysisResponse> {
-  callbacks?.onConnecting?.();
-
-  const tokenResponse = await fetch("/api/pitch/ws-token");
-  if (!tokenResponse.ok) {
-    throw new Error("Failed to obtain API token");
-  }
-  const { token } = await tokenResponse.json();
-
-  callbacks?.onStreaming?.();
-
-  const formData = new FormData();
-  formData.append("file", blob, "pitch.webm");
-  formData.append("include[]", "conversation_quality_overall");
-  formData.append("include[]", "conversation_quality_timeline");
-
-  const response = await fetch("https://api.interhuman.ai/v1/upload/analyze", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    let message = `Analysis failed (${response.status})`;
-    try {
-      const errJson = JSON.parse(errorText);
-      if (errJson.message) message = errJson.message;
-    } catch {
-      // use default message
-    }
-    throw new Error(message);
-  }
-
-  return response.json();
-}
-
-/**
- * Re-record a blob into WebM segments and send them to the streaming endpoint.
- */
-async function streamBlobAsSegments(
-  blob: Blob,
-  stream: InterhumanStream
+  stream: InterhumanStream,
 ): Promise<void> {
   const SEGMENT_MS = 3000;
 
@@ -242,10 +219,9 @@ async function streamBlobAsSegments(
 
       recorder = new MediaRecorder(canvasStream, { mimeType });
 
-      recorder.ondataavailable = async (e) => {
+      recorder.ondataavailable = (e) => {
         if (e.data.size > 0 && stream.isConnected) {
-          const buffer = await e.data.arrayBuffer();
-          stream.sendSegment(buffer);
+          void stream.sendSegment(e.data);
         }
       };
 

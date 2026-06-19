@@ -11,11 +11,18 @@ CREATE TABLE "Pitch" (
     "visitorId" TEXT NOT NULL,
     "durationSeconds" DOUBLE PRECISION NOT NULL,
     "mode" "PitchMode" NOT NULL,
+    "videoUrl" TEXT,
+    "videoPathname" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "Pitch_pkey" PRIMARY KEY ("id")
 );
--- Note: visitorId is an anonymous identifier (anon_xxx)
--- Note: Videos are stored locally in the browser (IndexedDB), not in Supabase
+-- visitorId is an anonymous identifier (anon_xxx).
+-- videoUrl / videoPathname point at the Vercel Blob copy of the recording;
+-- the browser also keeps a copy in IndexedDB for fast local playback.
+
+-- Migration for existing deployments:
+-- ALTER TABLE "Pitch" ADD COLUMN IF NOT EXISTS "videoUrl" TEXT;
+-- ALTER TABLE "Pitch" ADD COLUMN IF NOT EXISTS "videoPathname" TEXT;
 
 -- CreateTable: PitchAnalysis
 -- Stores the Interhuman AI analysis results

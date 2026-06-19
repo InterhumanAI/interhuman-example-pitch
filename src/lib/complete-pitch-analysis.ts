@@ -15,12 +15,16 @@ export async function completePitchAnalysis({
   mode,
   userName = null,
   questionId = null,
+  videoUrl = null,
+  videoPathname = null,
 }: {
   analysis: InterhumanAnalysisResponse;
   duration: number;
   mode: string;
   userName?: string | null;
   questionId?: string | null;
+  videoUrl?: string | null;
+  videoPathname?: string | null;
 }): Promise<PitchAnalyzeApiResponse> {
   const scoreWithoutPercentile = calculatePitchScore(analysis, duration);
   const percentile = await calculatePercentile(scoreWithoutPercentile.composite, mode);
@@ -41,6 +45,8 @@ export async function completePitchAnalysis({
       questionId,
       analysis,
       score,
+      videoUrl,
+      videoPathname,
     });
     pitchId = result?.pitchId || null;
     scoreId = result?.scoreId || null;
@@ -64,6 +70,8 @@ async function savePitchToDatabase({
   questionId,
   analysis,
   score,
+  videoUrl,
+  videoPathname,
 }: {
   userName: string | null;
   duration: number;
@@ -71,6 +79,8 @@ async function savePitchToDatabase({
   questionId: string | null;
   analysis: InterhumanAnalysisResponse;
   score: PitchScore;
+  videoUrl?: string | null;
+  videoPathname?: string | null;
 }): Promise<{ pitchId: string; scoreId: string } | null> {
   try {
     const supabaseAdmin = getSupabaseAdmin();
@@ -81,13 +91,17 @@ async function savePitchToDatabase({
     const visitorId = `anon_${generateId()}`;
     const effectiveUserName = userName || "Anonymous Founder";
 
-    const { error: pitchError } = await supabaseAdmin.from("Pitch").insert({
+    const pitchRow: Record<string, unknown> = {
       id: pitchId,
       visitorId,
       durationSeconds: duration,
       mode,
       createdAt: new Date().toISOString(),
-    });
+    };
+    if (videoUrl) pitchRow.videoUrl = videoUrl;
+    if (videoPathname) pitchRow.videoPathname = videoPathname;
+
+    const { error: pitchError } = await supabaseAdmin.from("Pitch").insert(pitchRow);
 
     if (pitchError) {
       console.error("Error saving pitch:", pitchError);
