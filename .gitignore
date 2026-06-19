@@ -41,8 +41,8 @@ next-env.d.ts
 prisma/*.db
 prisma/*.db-journal
 
-# Uploaded videos (local dev)
-uploads/
+# Uploaded videos (local dev) — root only, don't match src/lib/uploads/
+/uploads/
 
 # Playwright MCP debug artifacts
 .playwright-mcp/
