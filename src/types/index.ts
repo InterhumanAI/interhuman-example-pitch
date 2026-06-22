@@ -61,8 +61,43 @@ export interface Badge {
   requirement: string;
 }
 
+export interface ContentDimension {
+  /** 0-100 */
+  score: number;
+  rationale: string;
+  /** 1-2 actionable tips */
+  tips: string[];
+}
+
+export type ContentDimensionKey =
+  | "messageClarity"
+  | "problemFraming"
+  | "solutionValue"
+  | "evidenceSpecificity"
+  | "narrativeStructure"
+  | "theAsk";
+
+export interface ContentScore {
+  /** 0-100, weighted blend of the LLM rubric + speech metrics */
+  contentComposite: number;
+  transcript: string;
+  speechMetrics: {
+    wordsPerMinute: number;
+    /** fillers per 100 words */
+    fillerDensity: number;
+    paceScore: number;
+    fillerScore: number;
+  };
+  dimensions: Record<ContentDimensionKey, ContentDimension>;
+  /** 1-2 sentence overall content feedback */
+  summary: string;
+}
+
 export interface PitchScore {
+  /** Overall blended score (delivery + content) shown as the headline number */
   composite: number;
+  /** Delivery-only composite (the legacy social-signal score) */
+  deliveryComposite: number;
   percentile: number;
   breakdown: {
     authority: number;
@@ -73,7 +108,39 @@ export interface PitchScore {
   };
   badges: Badge[];
   hasConversationQuality?: boolean;
+  hasContentScore?: boolean;
+  content?: ContentScore;
 }
+
+export const CONTENT_DIMENSION_LABELS: Record<
+  ContentDimensionKey,
+  { label: string; description: string }
+> = {
+  messageClarity: {
+    label: "Message Clarity",
+    description: "How clearly the core idea comes across in words",
+  },
+  problemFraming: {
+    label: "Problem Framing",
+    description: "How compellingly the problem is defined",
+  },
+  solutionValue: {
+    label: "Solution & Value",
+    description: "How well the solution and its value are articulated",
+  },
+  evidenceSpecificity: {
+    label: "Evidence & Specificity",
+    description: "Concrete traction, numbers, and specifics",
+  },
+  narrativeStructure: {
+    label: "Narrative Structure",
+    description: "Logical flow and storytelling from hook to close",
+  },
+  theAsk: {
+    label: "The Ask",
+    description: "Clarity and strength of the closing ask",
+  },
+};
 
 export const BADGES: Badge[] = [
   {

@@ -50,7 +50,11 @@ export default function ChallengePage() {
     }
   };
 
-  const analyzeBlob = async (blob: Blob, recordedDuration: number) => {
+  const analyzeBlob = async (
+    blob: Blob,
+    recordedDuration: number,
+    audioBlob?: Blob,
+  ) => {
     setPageState("analyzing");
     setDuration(recordedDuration);
     setError(null);
@@ -59,6 +63,7 @@ export default function ChallengePage() {
     try {
       const data = await submitPitchAnalysis({
         blob,
+        audioBlob,
         duration: recordedDuration,
         mode: "one_minute_challenge",
         userName: userName.trim() || undefined,
@@ -80,8 +85,13 @@ export default function ChallengePage() {
     }
   };
 
-  const handleRecordingComplete = async (blob: Blob, recordedDuration: number) => {
-    await analyzeBlob(blob, recordedDuration);
+  const handleRecordingComplete = async (
+    blob: Blob,
+    recordedDuration: number,
+    _videoId?: string,
+    audioBlob?: Blob,
+  ) => {
+    await analyzeBlob(blob, recordedDuration, audioBlob);
   };
 
   const handleRetry = () => {

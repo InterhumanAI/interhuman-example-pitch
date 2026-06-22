@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              marginBottom: "40px",
+              marginBottom: "24px",
             }}
           >
             <div
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
                 display: "flex",
                 fontSize: "28px",
                 color: "#94a3b8",
-                marginBottom: "20px",
+                marginBottom: "16px",
               }}
             >
               {userName}&apos;s Social Signals Analysis
@@ -103,17 +103,17 @@ export async function GET(request: NextRequest) {
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                width: "320px",
-                height: "320px",
-                borderRadius: "160px",
-                border: `12px solid ${scoreColor}`,
+                width: "240px",
+                height: "240px",
+                borderRadius: "120px",
+                border: `10px solid ${scoreColor}`,
                 backgroundColor: "#1e293b",
               }}
             >
               <div
                 style={{
                   display: "flex",
-                  fontSize: "120px",
+                  fontSize: "96px",
                   fontWeight: "bold",
                   color: scoreColor,
                 }}
@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
               <div
                 style={{
                   display: "flex",
-                  fontSize: "24px",
+                  fontSize: "22px",
                   color: "#94a3b8",
                 }}
               >
@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
             <div
               style={{
                 display: "flex",
-                marginTop: "32px",
+                marginTop: "20px",
                 fontSize: "22px",
                 color: "#64748b",
                 textAlign: "center",
@@ -148,7 +148,7 @@ export async function GET(request: NextRequest) {
               display: "flex",
               justifyContent: "flex-end",
               alignItems: "center",
-              marginTop: "40px",
+              marginTop: "24px",
               paddingTop: "24px",
               borderTop: "1px solid #334155",
             }}

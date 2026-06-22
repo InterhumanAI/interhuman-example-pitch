@@ -3,7 +3,7 @@ import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 const TOKEN_TTL_MS = 10 * 60_000;
-const ALLOWED_PATHNAME = /^pitches\/[a-z0-9_-]+\.(webm|mp4)$/i;
+const ALLOWED_PATHNAME = /^(pitches|pitch-audio)\/[a-z0-9_-]+\.(webm|mp4|m4a)$/i;
 
 function getSigningKey(): string {
   const key = process.env.INTERHUMAN_API_KEY;

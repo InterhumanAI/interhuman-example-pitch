@@ -8,6 +8,8 @@ import type {
   EngagementStateEntry,
   InterhumanAnalysisResponse,
   SignalEntry,
+  SignalProbability,
+  SignalType,
   TimelineEntry,
 } from "@/types";
 
@@ -16,7 +18,14 @@ const DEFAULT_WS_URL =
   "wss://api.interhuman.ai/v1/stream/analyze";
 
 const CONNECT_TIMEOUT_MS = 10_000;
-const TRAILING_QUIET_MS = 4_000;
+// Interhuman streams nothing for the first ~10s while it processes, then emits
+// bursts with gaps up to ~6s between them. There is no completion event, so we
+// rely on a quiet window after the last *analysis* event — it must be longer
+// than the largest inter-burst gap or we'd finalize mid-stream.
+const TRAILING_QUIET_MS = 12_000;
+// If no analysis event arrives within this window after the upload, give up and
+// finalize with whatever we have (usually nothing → delivery fallback).
+const WARMUP_TIMEOUT_MS = 60_000;
 const HARD_TIMEOUT_MS = 280_000;
 
 export interface AnalyzeBlobInput {
@@ -34,6 +43,12 @@ export async function analyzeBlobOverWs(
   const url = wsUrl ?? DEFAULT_WS_URL;
 
   const signals: SignalEntry[] = [];
+  // Signals stream as a `signal.detected` (start) followed later by a
+  // `signal.ended` (end). Track open signals by type until they close.
+  const openSignals = new Map<
+    SignalType,
+    { start: number; probability: SignalProbability; rationale: string }
+  >();
   const engagementStates: EngagementStateEntry[] = [];
   const quality: {
     overall?: ConversationQualityValues;
@@ -47,7 +62,9 @@ export async function analyzeBlobOverWs(
 
     let settled = false;
     let lastEventAt = Date.now();
+    let receivedAnalysis = false;
     let trailingTimer: NodeJS.Timeout | null = null;
+    let warmupTimer: NodeJS.Timeout | null = null;
     const hardTimer = setTimeout(() => {
       if (settled) return;
       settled = true;
@@ -71,11 +88,28 @@ export async function analyzeBlobOverWs(
       reject(new Error("WebSocket connection timeout"));
     }, CONNECT_TIMEOUT_MS);
 
+    // Close out any signals that never received a `signal.ended` (e.g. the
+    // signal was still active when the recording ended).
+    const flushOpenSignals = (): void => {
+      openSignals.forEach((open, type) => {
+        signals.push({
+          type,
+          start: open.start,
+          end: open.start,
+          probability: open.probability,
+          rationale: open.rationale,
+        });
+      });
+      openSignals.clear();
+    };
+
     const finalize = (): void => {
       if (settled) return;
       settled = true;
       clearTimeout(hardTimer);
       if (trailingTimer) clearTimeout(trailingTimer);
+      if (warmupTimer) clearTimeout(warmupTimer);
+      flushOpenSignals();
       try {
         ws.close(1000);
       } catch {
@@ -102,6 +136,9 @@ export async function analyzeBlobOverWs(
       });
     };
 
+    // Re-arm the quiet timer after each analysis event. Only finalize once the
+    // stream has been quiet for the full window — long enough to ride over the
+    // multi-second gaps between Interhuman's bursts.
     const armTrailingTimer = () => {
       if (trailingTimer) clearTimeout(trailingTimer);
       trailingTimer = setTimeout(() => {
@@ -111,6 +148,17 @@ export async function analyzeBlobOverWs(
           armTrailingTimer();
         }
       }, TRAILING_QUIET_MS);
+    };
+
+    // Mark that real analysis data has started flowing and (re)arm the quiet
+    // timer. Called from the analysis-event branches below.
+    const noteAnalysisEvent = () => {
+      receivedAnalysis = true;
+      if (warmupTimer) {
+        clearTimeout(warmupTimer);
+        warmupTimer = null;
+      }
+      armTrailingTimer();
     };
 
     ws.on("open", () => {
@@ -133,11 +181,17 @@ export async function analyzeBlobOverWs(
             settled = true;
             clearTimeout(hardTimer);
             if (trailingTimer) clearTimeout(trailingTimer);
+            if (warmupTimer) clearTimeout(warmupTimer);
             reject(err);
           }
           return;
         }
-        armTrailingTimer();
+        // Analysis events don't begin for ~10s after upload. Don't arm the
+        // quiet timer yet — wait for the first real event, but bail out if
+        // nothing ever arrives.
+        warmupTimer = setTimeout(() => {
+          if (!settled && !receivedAnalysis) finalize();
+        }, WARMUP_TIMEOUT_MS);
       });
     });
 
@@ -154,8 +208,33 @@ export async function analyzeBlobOverWs(
       const { type, data } = parsed;
       switch (type) {
         case "signal.detected": {
-          const incoming = data?.signals as SignalEntry[] | undefined;
-          if (Array.isArray(incoming) && incoming.length) signals.push(...incoming);
+          // Interhuman sends a flat signal with a start time; the matching end
+          // arrives later in a `signal.ended`. Hold it open until then.
+          const signalType = data?.signal_type as SignalType | undefined;
+          if (signalType) {
+            openSignals.set(signalType, {
+              start: (data?.start as number) ?? 0,
+              probability: (data?.probability as SignalProbability) ?? "medium",
+              rationale: (data?.rationale as string) ?? "",
+            });
+          }
+          noteAnalysisEvent();
+          break;
+        }
+        case "signal.ended": {
+          const signalType = data?.signal_type as SignalType | undefined;
+          if (signalType && openSignals.has(signalType)) {
+            const open = openSignals.get(signalType)!;
+            signals.push({
+              type: signalType,
+              start: open.start,
+              end: (data?.end as number) ?? open.start,
+              probability: open.probability,
+              rationale: open.rationale,
+            });
+            openSignals.delete(signalType);
+          }
+          noteAnalysisEvent();
           break;
         }
         case "engagement.updated": {
@@ -166,6 +245,7 @@ export async function analyzeBlobOverWs(
               end: data.end as number,
             });
           }
+          noteAnalysisEvent();
           break;
         }
         case "conversation_quality.updated": {
@@ -175,6 +255,7 @@ export async function analyzeBlobOverWs(
           if (Array.isArray(timeline) && timeline.length) {
             quality.timeline.push(...timeline);
           }
+          noteAnalysisEvent();
           break;
         }
         case "analysis.complete":
@@ -187,6 +268,7 @@ export async function analyzeBlobOverWs(
             settled = true;
             clearTimeout(hardTimer);
             if (trailingTimer) clearTimeout(trailingTimer);
+            if (warmupTimer) clearTimeout(warmupTimer);
             try {
               ws.close();
             } catch {
@@ -207,6 +289,7 @@ export async function analyzeBlobOverWs(
       clearTimeout(connectTimer);
       clearTimeout(hardTimer);
       if (trailingTimer) clearTimeout(trailingTimer);
+      if (warmupTimer) clearTimeout(warmupTimer);
       reject(err);
     });
 

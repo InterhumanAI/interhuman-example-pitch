@@ -14,6 +14,8 @@ export type StreamingAnalysisCallbacks = {
 
 export type SubmitPitchAnalysisMeta = {
   blob: Blob;
+  /** Optional audio-only blob for transcription / content scoring. */
+  audioBlob?: Blob;
   duration: number;
   mode: string;
   videoId?: string;
@@ -28,6 +30,11 @@ export type SubmitPitchAnalysisMeta = {
 function makePathname(mode: string): string {
   const slug = `${mode}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   return `pitches/${slug}.webm`;
+}
+
+function makeAudioPathname(mode: string): string {
+  const slug = `${mode}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return `pitch-audio/${slug}.webm`;
 }
 
 async function signUpload(pathname: string): Promise<UploadAuth> {
@@ -61,6 +68,7 @@ export async function submitPitchAnalysis(
 ): Promise<PitchAnalyzeApiResponse> {
   const {
     blob,
+    audioBlob,
     duration,
     mode,
     userName,
@@ -72,18 +80,45 @@ export async function submitPitchAnalysis(
 
   let videoUrl = uploadedVideoUrl;
   let videoPathname = uploadedVideoPathname;
+  let audioBlobUrl: string | undefined;
+  let audioPathname: string | undefined;
 
   if (!videoUrl || !videoPathname) {
     onStreamCallbacks?.onStreaming?.();
-    const pathname = makePathname(mode);
-    const auth = await signUpload(pathname);
-    const uploaded = await uploadInChunks({
-      blob,
-      auth,
-      contentType: "video/webm",
-    });
-    videoUrl = uploaded.url;
-    videoPathname = uploaded.pathname;
+
+    // Upload video and (optional) audio concurrently to avoid serial latency.
+    const videoUpload = (async () => {
+      const auth = await signUpload(makePathname(mode));
+      return uploadInChunks({ blob, auth, contentType: "video/webm" });
+    })();
+
+    const audioUpload = audioBlob
+      ? (async () => {
+          try {
+            const auth = await signUpload(makeAudioPathname(mode));
+            return await uploadInChunks({
+              blob: audioBlob,
+              auth,
+              contentType: "audio/webm",
+            });
+          } catch (err) {
+            // Audio is optional — a failure here just means delivery-only scoring.
+            console.warn("Audio upload failed, continuing without content score:", err);
+            return null;
+          }
+        })()
+      : Promise.resolve(null);
+
+    const [uploadedVideo, uploadedAudio] = await Promise.all([
+      videoUpload,
+      audioUpload,
+    ]);
+    videoUrl = uploadedVideo.url;
+    videoPathname = uploadedVideo.pathname;
+    if (uploadedAudio) {
+      audioBlobUrl = uploadedAudio.url;
+      audioPathname = uploadedAudio.pathname;
+    }
   }
 
   onStreamCallbacks?.onConnecting?.();
@@ -94,6 +129,8 @@ export async function submitPitchAnalysis(
     body: JSON.stringify({
       blobUrl: videoUrl,
       videoPathname,
+      audioBlobUrl: audioBlobUrl ?? null,
+      audioPathname: audioPathname ?? null,
       duration,
       mode,
       userName: userName ?? null,
