@@ -82,7 +82,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         return NextResponse.json(result);
       }
       const result = await createMultipartUpload(pathname!, {
-        access: "public",
+        access: "private",
         contentType: baseType,
         addRandomSuffix: true,
       });
@@ -120,7 +120,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         return NextResponse.json(result);
       }
       const result = await uploadPart(pathname!, body, {
-        access: "public",
+        access: "private",
         uploadId,
         key,
         partNumber,
@@ -156,7 +156,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         return NextResponse.json(result);
       }
       const result = await completeMultipartUpload(pathname!, parts, {
-        access: "public",
+        access: "private",
         uploadId,
         key,
         contentType: baseType,

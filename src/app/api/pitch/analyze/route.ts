@@ -1,5 +1,6 @@
 import "server-only";
 
+import { get } from "@vercel/blob";
 import { NextResponse } from "next/server";
 
 import { analyzeBlobOverWs } from "@/lib/interhuman/analyze-blob";
@@ -67,22 +68,43 @@ export async function POST(request: Request) {
       }
       bytes = new Uint8Array(local.bytes);
     } else {
-      const res = await fetch(blobUrl);
-      if (!res.ok) {
+      // Private blobs aren't reachable over plain HTTP — the SDK adds the
+      // store's auth token automatically when invoked with our project's
+      // BLOB_READ_WRITE_TOKEN.
+      const result = await get(blobUrl, { access: "private" });
+      if (!result || result.statusCode !== 200 || !result.stream) {
         return NextResponse.json(
-          { error: `Failed to fetch blob: ${res.status}` },
+          { error: `Failed to fetch blob: ${result?.statusCode ?? "unknown"}` },
           { status: 502 },
         );
       }
-      const cl = Number(res.headers.get("content-length") ?? 0);
-      if (cl && cl > MAX_BLOB_BYTES) {
+      if (result.blob.size > MAX_BLOB_BYTES) {
         return NextResponse.json({ error: "Blob too large" }, { status: 413 });
       }
-      const buf = await res.arrayBuffer();
-      if (buf.byteLength > MAX_BLOB_BYTES) {
-        return NextResponse.json({ error: "Blob too large" }, { status: 413 });
+      const reader = result.stream.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        total += value.byteLength;
+        if (total > MAX_BLOB_BYTES) {
+          try {
+            await reader.cancel();
+          } catch {
+            /* noop */
+          }
+          return NextResponse.json({ error: "Blob too large" }, { status: 413 });
+        }
+        chunks.push(value);
       }
-      bytes = new Uint8Array(buf);
+      bytes = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) {
+        bytes.set(c, offset);
+        offset += c.byteLength;
+      }
     }
   } catch (err) {
     console.error("[/api/pitch/analyze] fetch blob failed", err);
