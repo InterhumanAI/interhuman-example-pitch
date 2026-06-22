@@ -158,6 +158,7 @@ export async function POST(request: Request) {
       analyzeBlobOverWs({
         bytes,
         apiKey,
+        durationSeconds: duration,
         config: {
           include: payload.include ?? [
             "conversation_quality_overall",

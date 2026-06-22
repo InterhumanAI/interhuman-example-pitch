@@ -19,10 +19,12 @@ const DEFAULT_WS_URL =
 
 const CONNECT_TIMEOUT_MS = 10_000;
 // Interhuman streams nothing for the first ~10s while it processes, then emits
-// bursts with gaps up to ~6s between them. There is no completion event, so we
-// rely on a quiet window after the last *analysis* event — it must be longer
-// than the largest inter-burst gap or we'd finalize mid-stream.
-const TRAILING_QUIET_MS = 12_000;
+// bursts with gaps between them. Observed gaps reach ~12s (e.g. between a
+// signal.detected and its signal.ended). There is no completion event, so we
+// rely on a quiet window after the last *analysis* event — it must comfortably
+// exceed the largest inter-burst gap or we'd finalize mid-stream and drop or
+// mis-bound signals. 20s gives real margin over the ~12s observed gaps.
+const TRAILING_QUIET_MS = 20_000;
 // If no analysis event arrives within this window after the upload, give up and
 // finalize with whatever we have (usually nothing → delivery fallback).
 const WARMUP_TIMEOUT_MS = 60_000;
@@ -34,12 +36,14 @@ export interface AnalyzeBlobInput {
   config?: Record<string, unknown>;
   wsUrl?: string;
   contentType?: string;
+  /** Recording length, used to bound a signal that never received an end. */
+  durationSeconds?: number;
 }
 
 export async function analyzeBlobOverWs(
   input: AnalyzeBlobInput,
 ): Promise<InterhumanAnalysisResponse> {
-  const { bytes, apiKey, config, wsUrl } = input;
+  const { bytes, apiKey, config, wsUrl, durationSeconds } = input;
   const url = wsUrl ?? DEFAULT_WS_URL;
 
   const signals: SignalEntry[] = [];
@@ -92,10 +96,17 @@ export async function analyzeBlobOverWs(
     // signal was still active when the recording ended).
     const flushOpenSignals = (): void => {
       openSignals.forEach((open, type) => {
+        // No end arrived — extend to the recording's end (or, if duration is
+        // unknown, a 1s minimum) so the signal renders as a real interval
+        // rather than a zero-width blip at its start.
+        const fallbackEnd =
+          durationSeconds && durationSeconds > open.start
+            ? durationSeconds
+            : open.start + 1;
         signals.push({
           type,
           start: open.start,
-          end: open.start,
+          end: fallbackEnd,
           probability: open.probability,
           rationale: open.rationale,
         });
