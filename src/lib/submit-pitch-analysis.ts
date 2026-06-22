@@ -1,6 +1,7 @@
 "use client";
 
 import { uploadInChunks, type UploadAuth } from "@/lib/uploads/multipart-upload";
+import { uploadToBlob, type BlobUploadResult } from "@/lib/uploads/blob-client-upload";
 import type { PitchAnalyzeApiResponse } from "@/types/pitch-api";
 
 export type { PitchAnalyzeApiResponse };
@@ -58,6 +59,37 @@ async function signUpload(pathname: string): Promise<UploadAuth> {
   };
 }
 
+// Whether Vercel Blob is configured server-side. When true we upload
+// client-direct (bypasses the 4.5 MB function body limit); when false (local
+// dev with no blob token) we fall back to the through-function chunked upload
+// against the local-disk store.
+let blobConfiguredCache: boolean | null = null;
+async function isBlobConfigured(): Promise<boolean> {
+  if (blobConfiguredCache !== null) return blobConfiguredCache;
+  try {
+    const res = await fetch("/api/health");
+    const data = (await res.json()) as { hasBlobToken?: boolean };
+    blobConfiguredCache = !!data.hasBlobToken;
+  } catch {
+    blobConfiguredCache = false;
+  }
+  return blobConfiguredCache;
+}
+
+// Upload one blob using whichever path is available. Tries client-direct first
+// (production), falling back to chunked-through-function (local dev).
+async function uploadOne(
+  blob: Blob,
+  pathname: string,
+  contentType: string,
+): Promise<BlobUploadResult> {
+  if (await isBlobConfigured()) {
+    return uploadToBlob({ blob, pathname, contentType });
+  }
+  const auth = await signUpload(pathname);
+  return uploadInChunks({ blob, auth, contentType });
+}
+
 /**
  * Upload the recorded pitch to Vercel Blob, then ask the server to analyze it
  * by opening a single WebSocket to Interhuman. All state lives inside one
@@ -87,20 +119,12 @@ export async function submitPitchAnalysis(
     onStreamCallbacks?.onStreaming?.();
 
     // Upload video and (optional) audio concurrently to avoid serial latency.
-    const videoUpload = (async () => {
-      const auth = await signUpload(makePathname(mode));
-      return uploadInChunks({ blob, auth, contentType: "video/webm" });
-    })();
+    const videoUpload = uploadOne(blob, makePathname(mode), "video/webm");
 
     const audioUpload = audioBlob
       ? (async () => {
           try {
-            const auth = await signUpload(makeAudioPathname(mode));
-            return await uploadInChunks({
-              blob: audioBlob,
-              auth,
-              contentType: "audio/webm",
-            });
+            return await uploadOne(audioBlob, makeAudioPathname(mode), "audio/webm");
           } catch (err) {
             // Audio is optional — a failure here just means delivery-only scoring.
             console.warn("Audio upload failed, continuing without content score:", err);
