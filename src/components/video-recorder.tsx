@@ -18,6 +18,7 @@ interface VideoRecorderProps {
     blob: Blob,
     duration: number,
     videoId?: string,
+    audioBlob?: Blob,
   ) => void;
   mode?: "free" | "challenge";
   pitchMode?: "free_pitch" | "one_minute_challenge" | "qa_practice";
@@ -41,6 +42,10 @@ export function VideoRecorder({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  // Separate audio-only recorder feeds a small blob for server-side transcription.
+  const audioRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordedAudioBlobRef = useRef<Blob | null>(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -129,6 +134,8 @@ export function VideoRecorder({
     setSavedVideoId(null);
     setSaveSuccess(false);
     chunksRef.current = [];
+    audioChunksRef.current = [];
+    recordedAudioBlobRef.current = null;
 
     const mimeType = [
       "video/webm;codecs=vp9,opus",
@@ -159,8 +166,41 @@ export function VideoRecorder({
       setIsRecording(false);
     };
 
+    // Capture an audio-only blob in parallel for transcription. Sharing the
+    // live mic track means no second permission prompt, and the audio matches
+    // the video exactly. Failures here are non-fatal — content scoring is
+    // simply skipped server-side if no audio blob arrives.
+    audioRecorderRef.current = null;
+    try {
+      const audioTracks = streamRef.current.getAudioTracks();
+      if (audioTracks.length > 0) {
+        const audioStream = new MediaStream([audioTracks[0]]);
+        const audioMime = [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+        ].find((m) => MediaRecorder.isTypeSupported(m)) || "audio/webm";
+        const audioRecorder = new MediaRecorder(audioStream, {
+          mimeType: audioMime,
+          audioBitsPerSecond: 64000,
+        });
+        audioRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        };
+        audioRecorder.onstop = () => {
+          recordedAudioBlobRef.current = audioChunksRef.current.length
+            ? new Blob(audioChunksRef.current, { type: "audio/webm" })
+            : null;
+        };
+        audioRecorderRef.current = audioRecorder;
+      }
+    } catch (err) {
+      console.warn("Audio-only recorder unavailable:", err);
+      audioRecorderRef.current = null;
+    }
+
     try {
       recorder.start();
+      audioRecorderRef.current?.start();
       setIsRecording(true);
       setDuration(0);
     } catch (err) {
@@ -172,6 +212,9 @@ export function VideoRecorder({
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
+      if (audioRecorderRef.current && audioRecorderRef.current.state !== "inactive") {
+        audioRecorderRef.current.stop();
+      }
       setIsRecording(false);
       setIsPaused(false);
     }
@@ -182,6 +225,8 @@ export function VideoRecorder({
     setDuration(0);
     setSavedVideoId(null);
     setSaveSuccess(false);
+    audioChunksRef.current = [];
+    recordedAudioBlobRef.current = null;
     if (videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
     }
@@ -258,7 +303,12 @@ export function VideoRecorder({
       }
     }
 
-    onRecordingComplete(recordedBlob, duration, videoId || undefined);
+    onRecordingComplete(
+      recordedBlob,
+      duration,
+      videoId || undefined,
+      recordedAudioBlobRef.current || undefined,
+    );
   }, [recordedBlob, duration, onRecordingComplete, autoSave, savedVideoId, pitchMode, questionId, questionText]);
 
   useEffect(() => {

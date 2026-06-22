@@ -38,9 +38,15 @@ CREATE TABLE "PitchAnalysis" (
     "engagementStatesJson" JSONB NOT NULL,
     "signalsJson" JSONB NOT NULL,
     "timelineJson" JSONB NOT NULL,
+    "transcriptText" TEXT,
+    "contentJson" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "PitchAnalysis_pkey" PRIMARY KEY ("id")
 );
+-- transcriptText / contentJson hold the OpenAI transcript + content score.
+-- Migration for existing deployments:
+-- ALTER TABLE "PitchAnalysis" ADD COLUMN IF NOT EXISTS "transcriptText" TEXT;
+-- ALTER TABLE "PitchAnalysis" ADD COLUMN IF NOT EXISTS "contentJson" JSONB;
 CREATE UNIQUE INDEX "PitchAnalysis_pitchId_key" ON "PitchAnalysis"("pitchId");
 ALTER TABLE "PitchAnalysis" ADD CONSTRAINT "PitchAnalysis_pitchId_fkey" FOREIGN KEY ("pitchId") REFERENCES "Pitch"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -53,6 +59,9 @@ CREATE TABLE "PitchScore" (
     "userName" TEXT DEFAULT 'Anonymous Founder',
     "mode" "PitchMode",
     "compositeScore" INTEGER NOT NULL,
+    "deliveryScore" INTEGER,
+    "contentScore" INTEGER,
+    "hasContentScore" BOOLEAN DEFAULT false,
     "percentileRank" DOUBLE PRECISION,
     "authorityScore" INTEGER NOT NULL,
     "clarityScore" INTEGER NOT NULL,
@@ -63,6 +72,13 @@ CREATE TABLE "PitchScore" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "PitchScore_pkey" PRIMARY KEY ("id")
 );
+-- compositeScore is the blended overall score (delivery + content).
+-- deliveryScore retains the delivery-only number; contentScore is null when
+-- transcript scoring was unavailable.
+-- Migration for existing deployments:
+-- ALTER TABLE "PitchScore" ADD COLUMN IF NOT EXISTS "deliveryScore" INTEGER;
+-- ALTER TABLE "PitchScore" ADD COLUMN IF NOT EXISTS "contentScore" INTEGER;
+-- ALTER TABLE "PitchScore" ADD COLUMN IF NOT EXISTS "hasContentScore" BOOLEAN DEFAULT false;
 CREATE UNIQUE INDEX "PitchScore_pitchId_key" ON "PitchScore"("pitchId");
 CREATE INDEX "PitchScore_visitorId_compositeScore_idx" ON "PitchScore"("visitorId", "compositeScore");
 CREATE INDEX "PitchScore_createdAt_idx" ON "PitchScore"("createdAt");

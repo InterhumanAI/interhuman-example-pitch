@@ -18,7 +18,13 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const ALLOWED_TYPES = new Set(["video/webm", "video/mp4"]);
+const ALLOWED_TYPES = new Set([
+  "video/webm",
+  "video/mp4",
+  "audio/webm",
+  "audio/mp4",
+  "audio/m4a",
+]);
 const MAX_PART_BYTES = 16 * 1024 * 1024;
 const MAX_TOTAL_PARTS = 256;
 

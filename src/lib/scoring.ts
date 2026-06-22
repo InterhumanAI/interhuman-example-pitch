@@ -4,7 +4,11 @@ import {
   Badge,
   BADGES,
   SignalType,
+  ContentScore,
 } from "@/types";
+
+// How the overall (headline) composite blends delivery and content scores.
+const OVERALL_WEIGHTS = { delivery: 0.5, content: 0.5 };
 
 function countSignals(
   signals: InterhumanAnalysisResponse["signals"],
@@ -51,7 +55,8 @@ function calculateLowHesitationScore(
 
 export function calculatePitchScore(
   analysis: InterhumanAnalysisResponse,
-  durationSeconds: number
+  durationSeconds: number,
+  content?: ContentScore | null
 ): Omit<PitchScore, "percentile"> {
   const { conversation_quality, signals } = analysis;
   
@@ -77,10 +82,11 @@ export function calculatePitchScore(
     lowHesitation: lowHesitationScore,
   };
 
-  // Only calculate composite if we have conversation quality data
-  let composite: number;
+  // Delivery composite: conversation-quality-weighted when available, else
+  // signal-based fallback.
+  let deliveryComposite: number;
   if (hasConversationQuality) {
-    composite = Math.round(
+    deliveryComposite = Math.round(
       breakdown.authority * 0.3 +
       breakdown.clarity * 0.25 +
       breakdown.energy * 0.2 +
@@ -89,18 +95,31 @@ export function calculatePitchScore(
     );
   } else {
     // Use signal-based composite when no conversation quality
-    composite = Math.round(
+    deliveryComposite = Math.round(
       (confidenceScore + lowHesitationScore) / 2
     );
   }
 
-  const badges = calculateBadges(breakdown, composite, hasConversationQuality);
+  // Overall composite blends delivery with content when content is available;
+  // otherwise it falls back to delivery-only.
+  const hasContentScore = !!content;
+  const composite = hasContentScore
+    ? Math.round(
+        OVERALL_WEIGHTS.delivery * deliveryComposite +
+        OVERALL_WEIGHTS.content * content!.contentComposite
+      )
+    : deliveryComposite;
+
+  const badges = calculateBadges(breakdown, deliveryComposite, hasConversationQuality);
 
   return {
     composite,
+    deliveryComposite,
     breakdown,
     badges,
     hasConversationQuality,
+    hasContentScore,
+    content: content ?? undefined,
   } as Omit<PitchScore, "percentile">;
 }
 

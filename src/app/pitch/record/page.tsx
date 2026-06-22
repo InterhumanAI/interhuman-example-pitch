@@ -27,6 +27,7 @@ export default function RecordPitchPage() {
     blob: Blob,
     recordedDuration: number,
     videoId?: string,
+    audioBlob?: Blob,
   ) => {
     setDuration(recordedDuration);
     setError(null);
@@ -37,6 +38,7 @@ export default function RecordPitchPage() {
     try {
       const data = await submitPitchAnalysis({
         blob,
+        audioBlob,
         duration: recordedDuration,
         mode: "free_pitch",
         videoId,
@@ -72,8 +74,9 @@ export default function RecordPitchPage() {
     blob: Blob,
     recordedDuration: number,
     videoId?: string,
+    audioBlob?: Blob,
   ) => {
-    await analyzeVideo(blob, recordedDuration, videoId);
+    await analyzeVideo(blob, recordedDuration, videoId, audioBlob);
   };
 
   const handleSavedVideoSelect = async (video: StoredVideo) => {

@@ -1,4 +1,4 @@
-import { InterhumanAnalysisResponse, PitchScore } from "@/types";
+import { InterhumanAnalysisResponse, PitchScore, ContentScore } from "@/types";
 import { calculatePitchScore } from "@/lib/scoring";
 import { getSupabaseAdmin, isSupabaseConfigured } from "@/lib/db";
 import type { PitchAnalyzeApiResponse } from "@/types/pitch-api";
@@ -17,6 +17,7 @@ export async function completePitchAnalysis({
   questionId = null,
   videoUrl = null,
   videoPathname = null,
+  content = null,
 }: {
   analysis: InterhumanAnalysisResponse;
   duration: number;
@@ -25,8 +26,9 @@ export async function completePitchAnalysis({
   questionId?: string | null;
   videoUrl?: string | null;
   videoPathname?: string | null;
+  content?: ContentScore | null;
 }): Promise<PitchAnalyzeApiResponse> {
-  const scoreWithoutPercentile = calculatePitchScore(analysis, duration);
+  const scoreWithoutPercentile = calculatePitchScore(analysis, duration, content);
   const percentile = await calculatePercentile(scoreWithoutPercentile.composite, mode);
 
   const score: PitchScore = {
@@ -124,6 +126,8 @@ async function savePitchToDatabase({
       engagementStatesJson: engagementStates,
       signalsJson: analysis.signals,
       timelineJson: analysis.conversation_quality?.timeline || [],
+      transcriptText: score.content?.transcript ?? null,
+      contentJson: score.content ?? null,
       createdAt: new Date().toISOString(),
     });
 
@@ -138,6 +142,9 @@ async function savePitchToDatabase({
       userName: effectiveUserName,
       mode,
       compositeScore: Math.round(score.composite),
+      deliveryScore: Math.round(score.deliveryComposite),
+      contentScore: score.content ? Math.round(score.content.contentComposite) : null,
+      hasContentScore: !!score.content,
       percentileRank: score.percentile,
       authorityScore: Math.round(score.breakdown.authority),
       clarityScore: Math.round(score.breakdown.clarity),
