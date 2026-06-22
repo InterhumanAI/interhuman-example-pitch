@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "db:setup": "node scripts/setup-supabase-db.mjs"
+    "db:setup": "node scripts/setup-supabase-db.mjs",
+    "db:migrate:content": "node scripts/migrate-content-scoring.mjs"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.0.4",
