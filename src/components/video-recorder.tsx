@@ -3,7 +3,7 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { cn, formatDuration } from "@/lib/utils";
-import { Video, Square, Circle, RotateCcw, Upload, Save, CheckCircle, Wifi } from "lucide-react";
+import { Video, Square, Circle, RotateCcw, Upload, Save, CheckCircle } from "lucide-react";
 import {
   saveVideo,
   generateVideoId,
@@ -11,14 +11,6 @@ import {
   formatStorageSize,
   StoredVideo,
 } from "@/lib/video-storage";
-import { InterhumanStream } from "@/lib/interhuman-stream";
-import { uploadInChunks } from "@/lib/uploads/multipart-upload";
-import type { SignalEntry } from "@/types";
-
-export interface UploadedVideo {
-  url: string;
-  pathname: string;
-}
 
 interface VideoRecorderProps {
   maxDuration?: number;
@@ -26,7 +18,6 @@ interface VideoRecorderProps {
     blob: Blob,
     duration: number,
     videoId?: string,
-    uploaded?: UploadedVideo,
   ) => void;
   mode?: "free" | "challenge";
   pitchMode?: "free_pitch" | "one_minute_challenge" | "qa_practice";
@@ -34,11 +25,6 @@ interface VideoRecorderProps {
   questionText?: string;
   className?: string;
   autoSave?: boolean;
-  /** If true, streams to Interhuman during recording for instant results */
-  liveStream?: boolean;
-  onLiveAnalysisReady?: (streamInstance: InterhumanStream) => void;
-  onLiveSignal?: (signals: SignalEntry[]) => void;
-  onUploaded?: (uploaded: UploadedVideo) => void;
 }
 
 export function VideoRecorder({
@@ -50,16 +36,11 @@ export function VideoRecorder({
   questionText,
   className,
   autoSave = true,
-  liveStream = true,
-  onLiveAnalysisReady,
-  onLiveSignal,
-  onUploaded,
 }: VideoRecorderProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const interhumanStreamRef = useRef<InterhumanStream | null>(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -71,11 +52,6 @@ export function VideoRecorder({
   const [savedVideoId, setSavedVideoId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [liveSignals, setLiveSignals] = useState<SignalEntry[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadedVideo, setUploadedVideo] = useState<UploadedVideo | null>(null);
-  const uploadPromiseRef = useRef<Promise<UploadedVideo | null> | null>(null);
 
   const startCamera = useCallback(async () => {
     try {
@@ -147,39 +123,12 @@ export function VideoRecorder({
     }, 1000);
   }, []);
 
-  const startRecordingActual = useCallback(async () => {
+  const startRecordingActual = useCallback(() => {
     if (!streamRef.current) return;
 
     setSavedVideoId(null);
     setSaveSuccess(false);
-    setLiveSignals([]);
     chunksRef.current = [];
-
-    // Try to connect WebSocket for live streaming
-    let liveStreamConnected = false;
-    if (liveStream) {
-      try {
-        const ihStream = new InterhumanStream({
-          onSignal: (signals) => {
-            setLiveSignals((prev) => [...prev, ...signals]);
-            onLiveSignal?.(signals);
-          },
-          onError: (code, msg) => {
-            console.warn(`Live stream error [${code}]: ${msg}`);
-          },
-        });
-        await ihStream.connect({
-          include: ["conversation_quality_overall", "conversation_quality_timeline"],
-        });
-        interhumanStreamRef.current = ihStream;
-        liveStreamConnected = true;
-        setIsStreaming(true);
-      } catch (err) {
-        console.warn("Live streaming unavailable, will upload after recording:", err);
-        interhumanStreamRef.current = null;
-        setIsStreaming(false);
-      }
-    }
 
     const mimeType = [
       "video/webm;codecs=vp9,opus",
@@ -197,81 +146,28 @@ export function VideoRecorder({
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) {
         chunksRef.current.push(e.data);
-        // Forward as a Blob — the stream needs to peek at the WebM init segment.
-        if (liveStreamConnected && interhumanStreamRef.current?.isConnected) {
-          void interhumanStreamRef.current.sendSegment(e.data);
-        }
       }
     };
 
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: mimeType.split(";")[0] });
       setRecordedBlob(blob);
-
-      const auth = interhumanStreamRef.current?.getAuth() ?? null;
-
-      // If streaming was active, close and notify that results are ready
-      if (interhumanStreamRef.current) {
-        setTimeout(() => {
-          if (interhumanStreamRef.current) {
-            interhumanStreamRef.current.close();
-            onLiveAnalysisReady?.(interhumanStreamRef.current);
-            setIsStreaming(false);
-          }
-        }, 2000); // brief wait for trailing events
-      }
-
-      // Kick off the durable Blob upload while the user reviews the recording.
-      // Re-uses the relay session auth so we never expose BLOB_READ_WRITE_TOKEN
-      // to the browser; the session stays valid for ~10 min in the relay.
-      if (auth && blob.size > 0) {
-        setIsUploading(true);
-        const pathname = `pitches/${pitchMode}-${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2, 8)}.webm`;
-        const promise = uploadInChunks({
-          blob,
-          pathname,
-          streamSessionId: auth.sessionId,
-          streamToken: auth.token,
-          contentType: "video/webm",
-        })
-          .then((result) => {
-            const uploaded: UploadedVideo = result;
-            setUploadedVideo(uploaded);
-            onUploaded?.(uploaded);
-            return uploaded;
-          })
-          .catch((err) => {
-            console.warn("Multipart upload failed:", err);
-            return null;
-          })
-          .finally(() => {
-            setIsUploading(false);
-          });
-        uploadPromiseRef.current = promise;
-      }
     };
 
     recorder.onerror = () => {
       setError("Recording failed. Please try again.");
       setIsRecording(false);
-      if (interhumanStreamRef.current) {
-        interhumanStreamRef.current.close();
-        interhumanStreamRef.current = null;
-        setIsStreaming(false);
-      }
     };
 
     try {
-      recorder.start(3000); // 3-second segments for streaming
+      recorder.start(1000);
       setIsRecording(true);
       setDuration(0);
     } catch (err) {
       console.error("Failed to start recording:", err);
       setError("Failed to start recording. Please try again.");
     }
-  }, [liveStream, onLiveAnalysisReady, onLiveSignal]);
+  }, []);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
@@ -286,14 +182,6 @@ export function VideoRecorder({
     setDuration(0);
     setSavedVideoId(null);
     setSaveSuccess(false);
-    setLiveSignals([]);
-    setIsStreaming(false);
-    setUploadedVideo(null);
-    uploadPromiseRef.current = null;
-    if (interhumanStreamRef.current) {
-      interhumanStreamRef.current.close();
-      interhumanStreamRef.current = null;
-    }
     if (videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
     }
@@ -370,13 +258,8 @@ export function VideoRecorder({
       }
     }
 
-    let uploaded: UploadedVideo | null = uploadedVideo;
-    if (!uploaded && uploadPromiseRef.current) {
-      uploaded = await uploadPromiseRef.current;
-    }
-
-    onRecordingComplete(recordedBlob, duration, videoId || undefined, uploaded || undefined);
-  }, [recordedBlob, duration, onRecordingComplete, autoSave, savedVideoId, pitchMode, questionId, questionText, uploadedVideo]);
+    onRecordingComplete(recordedBlob, duration, videoId || undefined);
+  }, [recordedBlob, duration, onRecordingComplete, autoSave, savedVideoId, pitchMode, questionId, questionText]);
 
   useEffect(() => {
     if (recordedBlob && videoRef.current) {
@@ -420,17 +303,8 @@ export function VideoRecorder({
           </div>
         )}
 
-        {isRecording && isStreaming && (
-          <div className="absolute top-4 right-4 flex items-center gap-1.5">
-            <Wifi className="w-4 h-4 text-green-400" />
-            <span className="text-green-400 text-xs font-medium bg-black/50 px-2 py-0.5 rounded">
-              Live
-            </span>
-          </div>
-        )}
-
         {isRecording && mode === "challenge" && (
-          <div className={cn("absolute right-4", isStreaming ? "top-12" : "top-4")}>
+          <div className="absolute right-4 top-4">
             <span
               className={cn(
                 "font-mono text-lg px-3 py-1 rounded",
@@ -470,24 +344,6 @@ export function VideoRecorder({
           </div>
         )}
       </div>
-
-      {isRecording && liveSignals.length > 0 && (
-        <div className="w-full max-w-2xl flex flex-wrap gap-2">
-          {liveSignals.slice(-5).map((signal, i) => (
-            <span
-              key={`${signal.type}-${signal.start}-${i}`}
-              className={cn(
-                "text-xs px-2 py-1 rounded-full font-medium",
-                signal.probability === "high"
-                  ? "bg-primary/20 text-primary"
-                  : "bg-muted text-muted-foreground"
-              )}
-            >
-              {signal.type}
-            </span>
-          ))}
-        </div>
-      )}
 
       {saveSuccess && (
         <div className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
@@ -560,9 +416,6 @@ export function VideoRecorder({
         <p className="text-sm text-muted-foreground">
           {formatDuration(duration)} • {formatStorageSize(recordedBlob.size)}
           {savedVideoId && " • Saved locally"}
-          {isStreaming && " • Analysis streaming..."}
-          {isUploading && " • Uploading..."}
-          {uploadedVideo && !isUploading && " • Uploaded"}
         </p>
       )}
 

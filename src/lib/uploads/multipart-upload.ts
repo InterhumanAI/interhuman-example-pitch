@@ -3,11 +3,15 @@ const PART_CONCURRENCY = 3;
 const PART_RETRIES = 4;
 const PART_RETRY_BACKOFF_MS = [250, 500, 1000, 2000];
 
+export interface UploadAuth {
+  token: string;
+  expires: number;
+  pathname: string;
+}
+
 interface UploadInChunksParams {
   blob: Blob;
-  pathname: string;
-  streamSessionId: string;
-  streamToken: string;
+  auth: UploadAuth;
   contentType?: string;
   onProgress?: (uploadedBytes: number, totalBytes: number) => void;
 }
@@ -17,7 +21,19 @@ interface UploadResult {
   pathname: string;
 }
 
-async function postJson<T>(url: string, body: unknown, headers: Record<string, string>): Promise<T> {
+function authHeaders(auth: UploadAuth): Record<string, string> {
+  return {
+    "x-upload-token": auth.token,
+    "x-upload-expires": String(auth.expires),
+    "x-pathname": auth.pathname,
+  };
+}
+
+async function postJson<T>(
+  url: string,
+  body: unknown,
+  headers: Record<string, string>,
+): Promise<T> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
@@ -58,22 +74,17 @@ async function uploadOnePart(args: {
 
 export async function uploadInChunks({
   blob,
-  pathname,
-  streamSessionId,
-  streamToken,
+  auth,
   contentType,
   onProgress,
 }: UploadInChunksParams): Promise<UploadResult> {
   const ct = contentType ?? blob.type ?? "video/webm";
-  const auth = {
-    "x-stream-session-id": streamSessionId,
-    "x-stream-token": streamToken,
-  };
+  const headers = authHeaders(auth);
 
   const created = await postJson<{ uploadId: string; key: string }>(
     "/api/upload/multipart?action=create",
-    { pathname, contentType: ct },
-    auth,
+    { pathname: auth.pathname, contentType: ct },
+    headers,
   );
 
   const partCount = Math.max(1, Math.ceil(blob.size / PART_SIZE_BYTES));
@@ -96,11 +107,10 @@ export async function uploadInChunks({
         url: "/api/upload/multipart?action=part",
         body: slice,
         headers: {
-          ...auth,
+          ...headers,
           "x-upload-id": created.uploadId,
           "x-key": created.key,
           "x-part-number": String(partNumber),
-          "x-pathname": pathname,
         },
       });
       partResults[partNumber - 1] = result;
@@ -124,11 +134,11 @@ export async function uploadInChunks({
     {
       uploadId: created.uploadId,
       key: created.key,
-      pathname,
+      pathname: auth.pathname,
       parts,
       contentType: ct,
     },
-    auth,
+    headers,
   );
 
   return { url: completed.url, pathname: completed.pathname };

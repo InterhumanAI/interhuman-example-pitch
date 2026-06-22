@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { VideoRecorder } from "@/components/video-recorder";
 import { ResultsDisplay } from "@/components/results-display";
@@ -10,9 +10,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InterhumanAnalysisResponse, PitchScore } from "@/types";
 import { StoredVideo, updateVideoAnalyzed } from "@/lib/video-storage";
 import { submitPitchAnalysis } from "@/lib/submit-pitch-analysis";
-import { calculatePitchScore } from "@/lib/scoring";
-import { InterhumanStream } from "@/lib/interhuman-stream";
-import type { UploadedVideo } from "@/components/video-recorder";
 import { ArrowLeft, Loader2 } from "lucide-react";
 
 type PageState = "record" | "analyzing" | "results";
@@ -23,89 +20,18 @@ export default function RecordPitchPage() {
   const [pitchScore, setPitchScore] = useState<PitchScore | null>(null);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
   const [currentVideoBlob, setCurrentVideoBlob] = useState<Blob | null>(null);
   const [compressStatus, setCompressStatus] = useState<string | null>(null);
-
-  const liveStreamRef = useRef<InterhumanStream | null>(null);
-
-  const handleLiveAnalysisReady = useCallback((streamInstance: InterhumanStream) => {
-    liveStreamRef.current = streamInstance;
-  }, []);
 
   const analyzeVideo = async (
     blob: Blob,
     recordedDuration: number,
     videoId?: string,
-    uploaded?: UploadedVideo,
   ) => {
     setDuration(recordedDuration);
     setError(null);
     setCompressStatus(null);
-    setCurrentVideoId(videoId || null);
     setCurrentVideoBlob(blob);
-
-    // If live streaming delivered results, use them directly
-    if (liveStreamRef.current) {
-      setPageState("analyzing");
-      setCompressStatus("Finalizing results…");
-
-      try {
-        const liveAnalysis = liveStreamRef.current.getAccumulatedResults();
-        liveStreamRef.current = null;
-
-        if (liveAnalysis.signals.length > 0) {
-          const scoreWithoutPercentile = calculatePitchScore(liveAnalysis, recordedDuration);
-          const score = { ...scoreWithoutPercentile, percentile: 50 };
-
-          // Persist to server
-          try {
-            const saveResponse = await fetch("/api/pitch/save-results", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                analysis: liveAnalysis,
-                score,
-                duration: recordedDuration,
-                mode: "free_pitch",
-                userName: null,
-                questionId: null,
-                videoUrl: uploaded?.url ?? null,
-                videoPathname: uploaded?.pathname ?? null,
-              }),
-            });
-            if (saveResponse.ok) {
-              const saveData = await saveResponse.json();
-              if (saveData.percentile != null) {
-                score.percentile = saveData.percentile;
-              }
-            }
-          } catch {
-            // Non-critical
-          }
-
-          setAnalysis(liveAnalysis);
-          setPitchScore(score);
-          setPageState("results");
-
-          if (videoId && score) {
-            try {
-              await updateVideoAnalyzed(videoId, score.composite, {
-                pitchScore: score,
-                signals: liveAnalysis.signals || [],
-              });
-            } catch {
-              // Non-critical
-            }
-          }
-          return;
-        }
-      } catch {
-        // Fall through to regular upload
-      }
-    }
-
-    // Fallback: upload-based analysis (WebSocket wasn't available or had no results)
     setPageState("analyzing");
 
     try {
@@ -114,11 +40,9 @@ export default function RecordPitchPage() {
         duration: recordedDuration,
         mode: "free_pitch",
         videoId,
-        uploadedVideoUrl: uploaded?.url,
-        uploadedVideoPathname: uploaded?.pathname,
         onStreamCallbacks: {
-          onConnecting: () => setCompressStatus("Connecting to analysis service…"),
-          onStreaming: () => setCompressStatus("Uploading video for analysis…"),
+          onStreaming: () => setCompressStatus("Uploading your pitch…"),
+          onConnecting: () => setCompressStatus("Analyzing your pitch…"),
           onProcessing: () => setCompressStatus("Finalizing results…"),
           onError: (msg) => setCompressStatus(`Error: ${msg}`),
         },
@@ -148,9 +72,8 @@ export default function RecordPitchPage() {
     blob: Blob,
     recordedDuration: number,
     videoId?: string,
-    uploaded?: UploadedVideo,
   ) => {
-    await analyzeVideo(blob, recordedDuration, videoId, uploaded);
+    await analyzeVideo(blob, recordedDuration, videoId);
   };
 
   const handleSavedVideoSelect = async (video: StoredVideo) => {
@@ -161,11 +84,9 @@ export default function RecordPitchPage() {
         signals: video.analysisResult.signals,
         engagement_states: [],
       } as InterhumanAnalysisResponse);
-      setCurrentVideoId(video.id);
       setCurrentVideoBlob(video.blob);
       setPageState("results");
     } else {
-      liveStreamRef.current = null;
       await analyzeVideo(video.blob, video.duration, video.id);
     }
   };
@@ -178,7 +99,6 @@ export default function RecordPitchPage() {
         signals: video.analysisResult.signals,
         engagement_states: [],
       } as InterhumanAnalysisResponse);
-      setCurrentVideoId(video.id);
       setCurrentVideoBlob(video.blob);
       setPageState("results");
     }
@@ -188,9 +108,7 @@ export default function RecordPitchPage() {
     setPageState("record");
     setAnalysis(null);
     setPitchScore(null);
-    setCurrentVideoId(null);
     setCurrentVideoBlob(null);
-    liveStreamRef.current = null;
   };
 
   return (
@@ -235,11 +153,9 @@ export default function RecordPitchPage() {
                   <VideoRecorder
                     maxDuration={180}
                     onRecordingComplete={handleRecordingComplete}
-                    onLiveAnalysisReady={handleLiveAnalysisReady}
                     mode="free"
                     pitchMode="free_pitch"
                     autoSave={true}
-                    liveStream={true}
                   />
 
                   <div className="mt-8 p-6 bg-secondary/30 rounded-lg">
@@ -256,8 +172,8 @@ export default function RecordPitchPage() {
               </TabsContent>
 
               <TabsContent value="saved">
-                <SavedVideos 
-                  onSelectVideo={handleSavedVideoSelect} 
+                <SavedVideos
+                  onSelectVideo={handleSavedVideoSelect}
                   onViewResults={handleViewResults}
                 />
               </TabsContent>

@@ -1,9 +1,5 @@
 /**
- * Server-side Interhuman utilities.
- *
- * The primary integration now uses WebSocket streaming directly from the
- * browser (see src/lib/interhuman-stream.ts). This module is kept for
- * reference and potential server-side fallback use.
+ * Server-side Interhuman helpers shared across API routes.
  */
 
 export class InterhumanAPIError extends Error {

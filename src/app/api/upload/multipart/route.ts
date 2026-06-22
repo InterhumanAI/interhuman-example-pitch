@@ -7,7 +7,7 @@ import {
 } from "@vercel/blob";
 import { NextResponse } from "next/server";
 
-import { getStreamSession } from "@/lib/interhuman/stream-relay";
+import { verifyUploadToken } from "@/lib/upload-token";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -16,23 +16,16 @@ const ALLOWED_TYPES = new Set(["video/webm", "video/mp4"]);
 const MAX_PART_BYTES = 16 * 1024 * 1024;
 const MAX_TOTAL_PARTS = 256;
 
-function authorize(req: Request): { ok: true } | { ok: false; res: NextResponse } {
-  const sid = req.headers.get("x-stream-session-id");
-  const token = req.headers.get("x-stream-token");
-  if (!sid || !token) {
+function authorize(req: Request, pathname: string | null) {
+  const token = req.headers.get("x-upload-token");
+  const expires = req.headers.get("x-upload-expires");
+  if (!pathname || !verifyUploadToken(pathname, expires, token)) {
     return {
-      ok: false,
-      res: NextResponse.json({ error: "Missing stream auth" }, { status: 401 }),
+      ok: false as const,
+      res: NextResponse.json({ error: "Bad upload token" }, { status: 401 }),
     };
   }
-  const session = getStreamSession(sid);
-  if (!session || session.token !== token) {
-    return {
-      ok: false,
-      res: NextResponse.json({ error: "Bad stream auth" }, { status: 401 }),
-    };
-  }
-  return { ok: true };
+  return { ok: true as const };
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -43,9 +36,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
-  const auth = authorize(request);
-  if (!auth.ok) return auth.res;
-
   const url = new URL(request.url);
   const action = url.searchParams.get("action");
 
@@ -55,9 +45,8 @@ export async function POST(request: Request): Promise<NextResponse> {
         pathname?: string;
         contentType?: string;
       };
-      if (!pathname) {
-        return NextResponse.json({ error: "Missing pathname" }, { status: 400 });
-      }
+      const auth = authorize(request, pathname ?? null);
+      if (!auth.ok) return auth.res;
       const baseType = (contentType ?? "video/webm").split(";")[0].trim().toLowerCase();
       if (!ALLOWED_TYPES.has(baseType)) {
         return NextResponse.json(
@@ -65,7 +54,7 @@ export async function POST(request: Request): Promise<NextResponse> {
           { status: 415 },
         );
       }
-      const result = await createMultipartUpload(pathname, {
+      const result = await createMultipartUpload(pathname!, {
         access: "public",
         contentType: baseType,
         addRandomSuffix: true,
@@ -74,11 +63,14 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 
     if (action === "part") {
+      const pathname = request.headers.get("x-pathname");
+      const auth = authorize(request, pathname);
+      if (!auth.ok) return auth.res;
+
       const uploadId = request.headers.get("x-upload-id");
       const key = request.headers.get("x-key");
       const partNumberRaw = request.headers.get("x-part-number");
-      const pathname = request.headers.get("x-pathname");
-      if (!uploadId || !key || !partNumberRaw || !pathname) {
+      if (!uploadId || !key || !partNumberRaw) {
         return NextResponse.json(
           { error: "Missing multipart headers" },
           { status: 400 },
@@ -96,7 +88,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       if (body.byteLength > MAX_PART_BYTES) {
         return NextResponse.json({ error: "Part too large" }, { status: 413 });
       }
-      const result = await uploadPart(pathname, body, {
+      const result = await uploadPart(pathname!, body, {
         access: "public",
         uploadId,
         key,
@@ -113,14 +105,16 @@ export async function POST(request: Request): Promise<NextResponse> {
         contentType?: string;
         parts?: { partNumber: number; etag: string }[];
       };
-      if (!uploadId || !key || !pathname || !Array.isArray(parts) || parts.length === 0) {
+      const auth = authorize(request, pathname ?? null);
+      if (!auth.ok) return auth.res;
+      if (!uploadId || !key || !Array.isArray(parts) || parts.length === 0) {
         return NextResponse.json(
           { error: "Missing complete payload" },
           { status: 400 },
         );
       }
       const baseType = (contentType ?? "video/webm").split(";")[0].trim().toLowerCase();
-      const result = await completeMultipartUpload(pathname, parts, {
+      const result = await completeMultipartUpload(pathname!, parts, {
         access: "public",
         uploadId,
         key,
