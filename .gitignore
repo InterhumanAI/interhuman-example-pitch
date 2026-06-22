@@ -8,6 +8,7 @@ coverage
 
 # Next.js
 .next/
+.next-uploads/
 out/
 
 # Production
