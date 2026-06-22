@@ -504,7 +504,7 @@ export default function ChallengePage() {
               {compressStatus || "Streaming video for analysis…"}
             </p>
             <p className="text-muted-foreground text-sm mt-2">
-              Then analyzing your score
+              Hang tight — we're scoring your pitch now.
             </p>
           </div>
         )}
