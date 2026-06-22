@@ -46,6 +46,19 @@ function originFromRequest(req: Request): string {
 
 export async function POST(request: Request): Promise<NextResponse> {
   const useLocal = localUploadsEnabled();
+  // Refuse the local-disk fallback in production — Vercel Lambdas have a
+  // read-only filesystem outside /tmp, so the write would 500 with a
+  // confusing EROFS error.
+  if (useLocal && process.env.VERCEL) {
+    return NextResponse.json(
+      {
+        error:
+          "BLOB_READ_WRITE_TOKEN is not set. In Vercel, open Storage → Blob, " +
+          "link a store to this project, and redeploy.",
+      },
+      { status: 500 },
+    );
+  }
   const url = new URL(request.url);
   const action = url.searchParams.get("action");
 
