@@ -8,6 +8,12 @@ import {
 import { NextResponse } from "next/server";
 
 import { verifyUploadToken } from "@/lib/upload-token";
+import {
+  localCompleteMultipart,
+  localCreateMultipart,
+  localUploadPart,
+  localUploadsEnabled,
+} from "@/lib/uploads/local-store";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -28,14 +34,18 @@ function authorize(req: Request, pathname: string | null) {
   return { ok: true as const };
 }
 
-export async function POST(request: Request): Promise<NextResponse> {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return NextResponse.json(
-      { error: "BLOB_READ_WRITE_TOKEN is not set" },
-      { status: 500 },
-    );
+function originFromRequest(req: Request): string {
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  const forwardedHost = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  if (forwardedHost) {
+    const proto = forwardedProto ?? (forwardedHost.startsWith("localhost") ? "http" : "https");
+    return `${proto}://${forwardedHost}`;
   }
+  return new URL(req.url).origin;
+}
 
+export async function POST(request: Request): Promise<NextResponse> {
+  const useLocal = localUploadsEnabled();
   const url = new URL(request.url);
   const action = url.searchParams.get("action");
 
@@ -53,6 +63,10 @@ export async function POST(request: Request): Promise<NextResponse> {
           { error: `Unsupported content-type: ${contentType}` },
           { status: 415 },
         );
+      }
+      if (useLocal) {
+        const result = await localCreateMultipart();
+        return NextResponse.json(result);
       }
       const result = await createMultipartUpload(pathname!, {
         access: "public",
@@ -88,6 +102,10 @@ export async function POST(request: Request): Promise<NextResponse> {
       if (body.byteLength > MAX_PART_BYTES) {
         return NextResponse.json({ error: "Part too large" }, { status: 413 });
       }
+      if (useLocal) {
+        const result = await localUploadPart(uploadId, partNumber, body);
+        return NextResponse.json(result);
+      }
       const result = await uploadPart(pathname!, body, {
         access: "public",
         uploadId,
@@ -114,6 +132,16 @@ export async function POST(request: Request): Promise<NextResponse> {
         );
       }
       const baseType = (contentType ?? "video/webm").split(";")[0].trim().toLowerCase();
+      if (useLocal) {
+        const result = await localCompleteMultipart(
+          uploadId,
+          pathname!,
+          parts,
+          baseType,
+          originFromRequest(request),
+        );
+        return NextResponse.json(result);
+      }
       const result = await completeMultipartUpload(pathname!, parts, {
         access: "public",
         uploadId,

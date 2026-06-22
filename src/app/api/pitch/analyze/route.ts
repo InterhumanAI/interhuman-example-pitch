@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { analyzeBlobOverWs } from "@/lib/interhuman/analyze-blob";
 import { completePitchAnalysis } from "@/lib/complete-pitch-analysis";
+import { parseLocalBlobId, readLocalBlob } from "@/lib/uploads/local-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +42,9 @@ export async function POST(request: Request) {
   if (!blobUrl || !/^https?:\/\//.test(blobUrl)) {
     return NextResponse.json({ error: "blobUrl required" }, { status: 400 });
   }
-  if (!isVercelBlobUrl(blobUrl)) {
+
+  const localBlobId = parseLocalBlobId(blobUrl);
+  if (!localBlobId && !isVercelBlobUrl(blobUrl)) {
     return NextResponse.json({ error: "blobUrl must be a Vercel Blob URL" }, { status: 400 });
   }
 
@@ -54,22 +57,33 @@ export async function POST(request: Request) {
 
   let bytes: Uint8Array;
   try {
-    const res = await fetch(blobUrl);
-    if (!res.ok) {
-      return NextResponse.json(
-        { error: `Failed to fetch blob: ${res.status}` },
-        { status: 502 },
-      );
+    if (localBlobId) {
+      const local = await readLocalBlob(localBlobId);
+      if (!local) {
+        return NextResponse.json({ error: "Local blob not found" }, { status: 404 });
+      }
+      if (local.bytes.byteLength > MAX_BLOB_BYTES) {
+        return NextResponse.json({ error: "Blob too large" }, { status: 413 });
+      }
+      bytes = new Uint8Array(local.bytes);
+    } else {
+      const res = await fetch(blobUrl);
+      if (!res.ok) {
+        return NextResponse.json(
+          { error: `Failed to fetch blob: ${res.status}` },
+          { status: 502 },
+        );
+      }
+      const cl = Number(res.headers.get("content-length") ?? 0);
+      if (cl && cl > MAX_BLOB_BYTES) {
+        return NextResponse.json({ error: "Blob too large" }, { status: 413 });
+      }
+      const buf = await res.arrayBuffer();
+      if (buf.byteLength > MAX_BLOB_BYTES) {
+        return NextResponse.json({ error: "Blob too large" }, { status: 413 });
+      }
+      bytes = new Uint8Array(buf);
     }
-    const cl = Number(res.headers.get("content-length") ?? 0);
-    if (cl && cl > MAX_BLOB_BYTES) {
-      return NextResponse.json({ error: "Blob too large" }, { status: 413 });
-    }
-    const buf = await res.arrayBuffer();
-    if (buf.byteLength > MAX_BLOB_BYTES) {
-      return NextResponse.json({ error: "Blob too large" }, { status: 413 });
-    }
-    bytes = new Uint8Array(buf);
   } catch (err) {
     console.error("[/api/pitch/analyze] fetch blob failed", err);
     return NextResponse.json({ error: "Failed to fetch blob" }, { status: 502 });

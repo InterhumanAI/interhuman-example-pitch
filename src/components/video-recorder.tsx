@@ -160,7 +160,7 @@ export function VideoRecorder({
     };
 
     try {
-      recorder.start(1000);
+      recorder.start();
       setIsRecording(true);
       setDuration(0);
     } catch (err) {

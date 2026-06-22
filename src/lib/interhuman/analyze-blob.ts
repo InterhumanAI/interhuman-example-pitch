@@ -18,7 +18,6 @@ const DEFAULT_WS_URL =
 const CONNECT_TIMEOUT_MS = 10_000;
 const TRAILING_QUIET_MS = 4_000;
 const HARD_TIMEOUT_MS = 280_000;
-const SEND_CHUNK_BYTES = 256 * 1024;
 
 export interface AnalyzeBlobInput {
   bytes: Uint8Array;
@@ -124,28 +123,22 @@ export async function analyzeBlobOverWs(
         }
       }
 
-      const send = (start: number): void => {
-        if (settled || ws.readyState !== WebSocket.OPEN) return;
-        if (start >= bytes.byteLength) {
-          armTrailingTimer();
+      // Interhuman expects each WS binary message to be a self-contained
+      // WebM segment. Splitting the file across multiple messages lands on
+      // arbitrary byte offsets inside Clusters and trips ih5004
+      // (malformed/truncated). Send the whole blob as one message.
+      ws.send(bytes, { binary: true }, (err) => {
+        if (err) {
+          if (!settled) {
+            settled = true;
+            clearTimeout(hardTimer);
+            if (trailingTimer) clearTimeout(trailingTimer);
+            reject(err);
+          }
           return;
         }
-        const end = Math.min(bytes.byteLength, start + SEND_CHUNK_BYTES);
-        const slice = bytes.subarray(start, end);
-        ws.send(slice, { binary: true }, (err) => {
-          if (err) {
-            if (!settled) {
-              settled = true;
-              clearTimeout(hardTimer);
-              if (trailingTimer) clearTimeout(trailingTimer);
-              reject(err);
-            }
-            return;
-          }
-          send(end);
-        });
-      };
-      send(0);
+        armTrailingTimer();
+      });
     });
 
     ws.on("message", (raw) => {
