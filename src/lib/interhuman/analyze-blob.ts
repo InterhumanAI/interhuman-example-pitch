@@ -2,6 +2,8 @@ import "server-only";
 
 import WebSocket from "ws";
 
+import { buildWebmFrames } from "./webm-chunks";
+
 import type {
   ConversationQualityValues,
   EngagementState,
@@ -222,22 +224,41 @@ export async function analyzeBlobOverWs(
         });
       }
 
-      // Interhuman expects each WS binary message to be a self-contained
-      // WebM segment. Splitting the file across multiple messages lands on
-      // arbitrary byte offsets inside Clusters and trips ih5004
-      // (malformed/truncated). Send the whole blob as one message.
-      ws.send(bytes, { binary: true }, (err) => {
-        if (err) {
-          rejectWithCloseInfo("binary send", err);
+      // Interhuman's stream endpoint caps each WS message at 32 MB, so a
+      // full-length pitch (~45 MB) can't go in one frame. Split on Cluster
+      // boundaries: the first frame carries the init segment (so it's a valid
+      // WebM), the rest are raw Cluster continuations. Splitting on arbitrary
+      // byte offsets inside a Cluster trips ih5004 (malformed/truncated), so
+      // buildWebmFrames only ever cuts between whole Clusters; if the blob
+      // can't be parsed it falls back to a single frame.
+      const frames = buildWebmFrames(bytes);
+      console.log(
+        "[analyze-blob] sending",
+        frames.length,
+        "frame(s):",
+        frames.map((f) => f.byteLength),
+      );
+
+      const sendFrame = (i: number): void => {
+        if (settled) return;
+        if (i >= frames.length) {
+          // Analysis events don't begin for ~10s after upload. Don't arm the
+          // quiet timer yet — wait for the first real event, but bail out if
+          // nothing ever arrives.
+          warmupTimer = setTimeout(() => {
+            if (!settled && !receivedAnalysis) finalize();
+          }, WARMUP_TIMEOUT_MS);
           return;
         }
-        // Analysis events don't begin for ~10s after upload. Don't arm the
-        // quiet timer yet — wait for the first real event, but bail out if
-        // nothing ever arrives.
-        warmupTimer = setTimeout(() => {
-          if (!settled && !receivedAnalysis) finalize();
-        }, WARMUP_TIMEOUT_MS);
-      });
+        ws.send(frames[i], { binary: true }, (err) => {
+          if (err) {
+            rejectWithCloseInfo(`binary send (frame ${i + 1}/${frames.length})`, err);
+            return;
+          }
+          sendFrame(i + 1);
+        });
+      };
+      sendFrame(0);
     });
 
     ws.on("message", (raw) => {
