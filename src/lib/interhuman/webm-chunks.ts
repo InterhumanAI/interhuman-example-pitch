@@ -36,12 +36,10 @@ const LEVEL1_IDS = new Set<number>([
 ]);
 
 export interface WebMSplit {
-  /** EBML header + Segment header + all level-1 metadata before the 1st Cluster. */
-  init: Uint8Array;
-  /** Each whole Cluster element (ID + size + body), in order. */
-  clusters: Uint8Array[];
-  /** Byte offset one past the last Cluster (trailing metadata, if any, is dropped). */
-  end: number;
+  /** Byte offset where the first Cluster begins (== init segment length). */
+  firstClusterStart: number;
+  /** Start offset of every Cluster element, in order. */
+  clusterStarts: number[];
 }
 
 /** Number of bytes in a VINT given its first byte (1–8), or 0 if invalid. */
@@ -101,8 +99,10 @@ function scanToNextLevel1(buf: Uint8Array, start: number): number {
 }
 
 /**
- * Parse the WebM structure into an init segment and its Cluster elements.
- * Throws on anything it doesn't recognize so callers can fall back safely.
+ * Locate the Cluster boundaries within the WebM stream. Returns only offsets —
+ * the caller slices the *original* buffer so no bytes are ever dropped or
+ * reconstructed. Throws on anything it doesn't recognize so callers can fall
+ * back to sending the blob verbatim.
  */
 export function splitWebm(bytes: Uint8Array): WebMSplit {
   let pos = 0;
@@ -123,9 +123,7 @@ export function splitWebm(bytes: Uint8Array): WebMSplit {
   const segBodyStart = segSize.next;
   const segEnd = segSize.size === null ? bytes.length : segBodyStart + segSize.size;
 
-  const clusters: Uint8Array[] = [];
-  let firstClusterStart = -1;
-  let lastClusterEnd = -1;
+  const clusterStarts: number[] = [];
   let p = segBodyStart;
 
   while (p < segEnd && p < bytes.length) {
@@ -142,26 +140,16 @@ export function splitWebm(bytes: Uint8Array): WebMSplit {
       elemEnd = afterSize + size;
     }
 
-    if (id === ID_CLUSTER) {
-      if (firstClusterStart < 0) firstClusterStart = elemStart;
-      lastClusterEnd = elemEnd;
-      clusters.push(bytes.slice(elemStart, elemEnd));
-    }
-    // Non-Cluster level-1 elements before the first Cluster are init metadata;
-    // anything after the clusters (e.g. trailing Cues) is dropped.
+    if (id === ID_CLUSTER) clusterStarts.push(elemStart);
 
     p = elemEnd;
   }
 
-  if (firstClusterStart < 0) {
+  if (clusterStarts.length === 0) {
     throw new Error("No Cluster elements found");
   }
 
-  return {
-    init: bytes.slice(0, firstClusterStart),
-    clusters,
-    end: lastClusterEnd,
-  };
+  return { firstClusterStart: clusterStarts[0], clusterStarts };
 }
 
 export interface BuildFramesOptions {
@@ -176,13 +164,19 @@ export interface BuildFramesOptions {
 const DEFAULT_MAX_FRAME_BYTES = 4 * 1024 * 1024; // 4 MB — comfortably < 32 MB
 
 /**
- * Build the ordered list of binary frames to send. Frame 0 is the init segment
- * concatenated with the first batch of Clusters (so it's a valid playable
- * WebM); subsequent frames are batches of raw Cluster continuations. Each
- * frame is greedily filled with whole Clusters up to maxFrameBytes.
+ * Build the ordered list of binary frames to send by slicing the *original*
+ * buffer at Cluster boundaries — never reconstructing it. This guarantees the
+ * frames concatenate back to the exact input bytes (no dropped Cues/trailing
+ * metadata, which is what produces Interhuman's ih5004 truncated error).
  *
- * Returns a single-element [bytes] array unchanged if the stream can't be
- * parsed or already fits in one frame — preserving the original send path.
+ * Frame 0 spans [0 .. first cut) so it carries the init segment plus the first
+ * batch of Clusters (a valid, playable WebM prefix). Each later frame begins on
+ * a Cluster boundary, and the final frame always runs to bytes.length so every
+ * trailing byte is included. Cut points are chosen greedily so each frame stays
+ * under maxFrameBytes (a single Cluster larger than the cap still ships whole).
+ *
+ * Returns [bytes] unchanged when the stream can't be parsed or fits in one
+ * frame — preserving the proven single-send path for short recordings.
  */
 export function buildWebmFrames(
   bytes: Uint8Array,
@@ -190,47 +184,35 @@ export function buildWebmFrames(
 ): Uint8Array[] {
   const max = opts.maxFrameBytes ?? DEFAULT_MAX_FRAME_BYTES;
 
+  // Small enough for one message → send verbatim, exactly as before.
+  if (bytes.byteLength <= max) return [bytes];
+
   let split: WebMSplit;
   try {
     split = splitWebm(bytes);
   } catch {
     return [bytes];
   }
-  if (split.clusters.length === 0) return [bytes];
+
+  // Candidate cut points: every Cluster start after the first, plus the end of
+  // the buffer. A frame is bytes[cutStart .. cutEnd). The init segment rides in
+  // the first frame because the first cut never precedes the first Cluster.
+  const boundaries = [...split.clusterStarts.slice(1), bytes.byteLength];
 
   const frames: Uint8Array[] = [];
-  // The first batch is prefixed with the init segment.
-  let batch: Uint8Array[] = [split.init];
-  let batchBytes = split.init.byteLength;
+  let frameStart = 0;
+  let prev = 0; // last boundary that fit within the cap
 
-  const flush = () => {
-    if (batch.length === 0) return;
-    if (batch.length === 1) {
-      frames.push(batch[0]);
-    } else {
-      const total = batch.reduce((n, c) => n + c.byteLength, 0);
-      const merged = new Uint8Array(total);
-      let off = 0;
-      for (const c of batch) {
-        merged.set(c, off);
-        off += c.byteLength;
-      }
-      frames.push(merged);
+  for (const b of boundaries) {
+    if (b - frameStart > max && prev > frameStart) {
+      // Adding up to b would overflow — cut at the previous boundary instead.
+      frames.push(bytes.slice(frameStart, prev));
+      frameStart = prev;
     }
-    batch = [];
-    batchBytes = 0;
-  };
-
-  for (const cluster of split.clusters) {
-    // Keep init attached to at least the first cluster; otherwise start a new
-    // frame when adding this cluster would exceed the cap.
-    if (batchBytes > 0 && batchBytes + cluster.byteLength > max) {
-      flush();
-    }
-    batch.push(cluster);
-    batchBytes += cluster.byteLength;
+    prev = b;
   }
-  flush();
+  // Flush the remainder (always runs to bytes.length → nothing dropped).
+  frames.push(bytes.slice(frameStart, bytes.byteLength));
 
   return frames;
 }
