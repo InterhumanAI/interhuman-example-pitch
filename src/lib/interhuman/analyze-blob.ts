@@ -69,6 +69,47 @@ export async function analyzeBlobOverWs(
     let receivedAnalysis = false;
     let trailingTimer: NodeJS.Timeout | null = null;
     let warmupTimer: NodeJS.Timeout | null = null;
+    // Diagnostics: the WS close frame (code + reason) usually carries the real
+    // cause (e.g. 1009 "message too big", 1008 policy/auth). A failed `ws.send`
+    // surfaces a bare EPIPE *before* that close frame arrives, so we capture the
+    // close info here and let send-failure paths wait briefly for it.
+    let closeCode: number | null = null;
+    let closeReason = "";
+    const clearAllTimers = () => {
+      clearTimeout(hardTimer);
+      clearTimeout(connectTimer);
+      if (trailingTimer) clearTimeout(trailingTimer);
+      if (warmupTimer) clearTimeout(warmupTimer);
+    };
+    // Reject with the underlying error enriched by whatever close code/reason
+    // upstream sent. If the close frame hasn't landed yet (typical for EPIPE),
+    // wait up to 1.5s for it before giving up so the report isn't just "EPIPE".
+    const rejectWithCloseInfo = (stage: string, err: Error) => {
+      if (settled) return;
+      settled = true; // claim the promise; defer the actual reject for close info
+      clearAllTimers();
+      const finishReject = () => {
+        const closeInfo =
+          closeCode !== null
+            ? ` [ws close ${closeCode}${closeReason ? ` "${closeReason}"` : ""}]`
+            : " [no ws close frame received]";
+        const enriched = new Error(
+          `Interhuman ${stage} failed (blob ${bytes.byteLength} bytes): ${err.message}${closeInfo}`,
+        );
+        console.error(`[analyze-blob] ${stage} failed`, {
+          blobBytes: bytes.byteLength,
+          errorMessage: err.message,
+          closeCode,
+          closeReason,
+        });
+        reject(enriched);
+      };
+      if (closeCode !== null) {
+        finishReject();
+      } else {
+        setTimeout(finishReject, 1_500);
+      }
+    };
     const hardTimer = setTimeout(() => {
       if (settled) return;
       settled = true;
@@ -174,12 +215,11 @@ export async function analyzeBlobOverWs(
 
     ws.on("open", () => {
       clearTimeout(connectTimer);
+      console.log("[analyze-blob] ws open, sending", bytes.byteLength, "bytes");
       if (config) {
-        try {
-          ws.send(JSON.stringify(config));
-        } catch {
-          /* noop */
-        }
+        ws.send(JSON.stringify(config), (err) => {
+          if (err) rejectWithCloseInfo("config send", err);
+        });
       }
 
       // Interhuman expects each WS binary message to be a self-contained
@@ -188,13 +228,7 @@ export async function analyzeBlobOverWs(
       // (malformed/truncated). Send the whole blob as one message.
       ws.send(bytes, { binary: true }, (err) => {
         if (err) {
-          if (!settled) {
-            settled = true;
-            clearTimeout(hardTimer);
-            if (trailingTimer) clearTimeout(trailingTimer);
-            if (warmupTimer) clearTimeout(warmupTimer);
-            reject(err);
-          }
+          rejectWithCloseInfo("binary send", err);
           return;
         }
         // Analysis events don't begin for ~10s after upload. Don't arm the
@@ -296,15 +330,15 @@ export async function analyzeBlobOverWs(
 
     ws.on("error", (err) => {
       if (settled) return;
-      settled = true;
-      clearTimeout(connectTimer);
-      clearTimeout(hardTimer);
-      if (trailingTimer) clearTimeout(trailingTimer);
-      if (warmupTimer) clearTimeout(warmupTimer);
-      reject(err);
+      rejectWithCloseInfo("ws error", err instanceof Error ? err : new Error(String(err)));
     });
 
-    ws.on("close", () => {
+    ws.on("close", (code: number, reason: Buffer) => {
+      // Record the close frame so a send-failure (EPIPE) reject can report the
+      // real upstream cause instead of a bare errno.
+      closeCode = code;
+      closeReason = reason?.toString() ?? "";
+      console.log("[analyze-blob] ws close", { code, reason: closeReason, receivedAnalysis });
       // If upstream closed before we finalized, treat the buffered envelopes
       // as the final result rather than failing.
       if (!settled) finalize();
