@@ -71,6 +71,9 @@ export async function analyzeBlobOverWs(
     let receivedAnalysis = false;
     let trailingTimer: NodeJS.Timeout | null = null;
     let warmupTimer: NodeJS.Timeout | null = null;
+    // How we framed the upload — folded into upstream errors so a failure tells
+    // us whether it was a single verbatim send or a multi-frame chunked send.
+    let frameInfo = "frames=?";
     // Diagnostics: the WS close frame (code + reason) usually carries the real
     // cause (e.g. 1009 "message too big", 1008 policy/auth). A failed `ws.send`
     // surfaces a bare EPIPE *before* that close frame arrives, so we capture the
@@ -232,12 +235,10 @@ export async function analyzeBlobOverWs(
       // buildWebmFrames only ever cuts between whole Clusters; if the blob
       // can't be parsed it falls back to a single frame.
       const frames = buildWebmFrames(bytes);
-      console.log(
-        "[analyze-blob] sending",
-        frames.length,
-        "frame(s):",
-        frames.map((f) => f.byteLength),
-      );
+      frameInfo = `total=${bytes.byteLength} frames=${frames.length} sizes=[${frames
+        .map((f) => f.byteLength)
+        .join(",")}]`;
+      console.log("[analyze-blob] sending", frameInfo);
 
       const sendFrame = (i: number): void => {
         if (settled) return;
@@ -342,7 +343,7 @@ export async function analyzeBlobOverWs(
             }
             const code = (data?.code as string) ?? "unknown";
             const message = (data?.message as string) ?? "Upstream error";
-            reject(new Error(`Interhuman error [${code}]: ${message}`));
+            reject(new Error(`Interhuman error [${code}]: ${message} (${frameInfo})`));
           }
           break;
         }
