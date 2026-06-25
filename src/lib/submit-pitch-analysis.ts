@@ -25,6 +25,13 @@ export type SubmitPitchAnalysisMeta = {
   /** If the recorder already uploaded the blob, skip the multipart re-upload. */
   uploadedVideoUrl?: string;
   uploadedVideoPathname?: string;
+  /**
+   * Byte size of each ~3s WebM segment the browser emitted, in order. The
+   * server slices the uploaded blob at these offsets and streams one segment
+   * per WS message to Interhuman. Absent for saved-video re-analysis, where
+   * the server falls back to sending the blob as-is.
+   */
+  segmentSizes?: number[];
   onStreamCallbacks?: StreamingAnalysisCallbacks;
 };
 
@@ -107,6 +114,7 @@ export async function submitPitchAnalysis(
     questionId,
     uploadedVideoUrl,
     uploadedVideoPathname,
+    segmentSizes,
     onStreamCallbacks,
   } = meta;
 
@@ -159,6 +167,7 @@ export async function submitPitchAnalysis(
       mode,
       userName: userName ?? null,
       questionId: questionId ?? null,
+      segmentSizes: segmentSizes ?? null,
     }),
   });
 

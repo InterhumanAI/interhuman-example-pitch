@@ -27,6 +27,8 @@ interface AnalyzePayload {
   userName?: string | null;
   questionId?: string | null;
   include?: string[];
+  /** Byte size of each ~3s WebM segment from the browser, in order. */
+  segmentSizes?: number[] | null;
 }
 
 class BlobFetchError extends Error {
@@ -159,6 +161,9 @@ export async function POST(request: Request) {
         bytes,
         apiKey,
         durationSeconds: duration,
+        segmentSizes: Array.isArray(payload.segmentSizes)
+          ? payload.segmentSizes
+          : undefined,
         config: {
           include: payload.include ?? [
             "conversation_quality_overall",

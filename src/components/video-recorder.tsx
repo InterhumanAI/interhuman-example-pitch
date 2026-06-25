@@ -12,6 +12,12 @@ import {
   StoredVideo,
 } from "@/lib/video-storage";
 
+// Emit a WebM segment every 3s. Interhuman wants the recording streamed as
+// small self-contained segments (the first carries the init/header, the rest
+// are continuations); the browser cuts these on valid boundaries for us, which
+// a server-side parser could not reliably do. A 180s pitch yields ~60 segments.
+const TIMESLICE_MS = 3000;
+
 interface VideoRecorderProps {
   maxDuration?: number;
   onRecordingComplete: (
@@ -19,6 +25,7 @@ interface VideoRecorderProps {
     duration: number,
     videoId?: string,
     audioBlob?: Blob,
+    segmentSizes?: number[],
   ) => void;
   mode?: "free" | "challenge";
   pitchMode?: "free_pitch" | "one_minute_challenge" | "qa_practice";
@@ -41,6 +48,10 @@ export function VideoRecorder({
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  // Byte size of each ~3s timeslice the browser emits, in order. These are the
+  // exact, valid WebM segment boundaries — the server slices the uploaded blob
+  // at these offsets and streams one WS message per segment to Interhuman.
+  const segmentSizesRef = useRef<number[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   // Separate audio-only recorder feeds a small blob for server-side transcription.
   const audioRecorderRef = useRef<MediaRecorder | null>(null);
@@ -134,6 +145,7 @@ export function VideoRecorder({
     setSavedVideoId(null);
     setSaveSuccess(false);
     chunksRef.current = [];
+    segmentSizesRef.current = [];
     audioChunksRef.current = [];
     recordedAudioBlobRef.current = null;
 
@@ -145,10 +157,10 @@ export function VideoRecorder({
 
     const recorder = new MediaRecorder(streamRef.current, {
       mimeType,
-      // 1 Mbps keeps a full 3-min pitch (~25 MB) under Interhuman's 32 MB
-      // single-message limit so it ships as one self-contained WebM. The
-      // stream endpoint rejects multi-frame chunked uploads (ih5004), and
-      // 1 Mbps is ample for face/voice delivery analysis.
+      // 1 Mbps is ample for face/voice delivery analysis and keeps per-segment
+      // sizes small. Size is no longer the constraint — we stream the recording
+      // to Interhuman as ~3s segments (see TIMESLICE_MS), so each WS message is
+      // well under the 32 MB limit.
       videoBitsPerSecond: 1000000,
       audioBitsPerSecond: 128000,
     });
@@ -157,6 +169,7 @@ export function VideoRecorder({
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) {
         chunksRef.current.push(e.data);
+        segmentSizesRef.current.push(e.data.size);
       }
     };
 
@@ -203,7 +216,7 @@ export function VideoRecorder({
     }
 
     try {
-      recorder.start();
+      recorder.start(TIMESLICE_MS);
       audioRecorderRef.current?.start();
       setIsRecording(true);
       setDuration(0);
@@ -312,6 +325,7 @@ export function VideoRecorder({
       duration,
       videoId || undefined,
       recordedAudioBlobRef.current || undefined,
+      segmentSizesRef.current.length ? [...segmentSizesRef.current] : undefined,
     );
   }, [recordedBlob, duration, onRecordingComplete, autoSave, savedVideoId, pitchMode, questionId, questionText]);
 

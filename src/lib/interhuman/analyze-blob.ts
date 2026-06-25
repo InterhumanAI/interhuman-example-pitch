@@ -40,12 +40,42 @@ export interface AnalyzeBlobInput {
   contentType?: string;
   /** Recording length, used to bound a signal that never received an end. */
   durationSeconds?: number;
+  /**
+   * Byte size of each WebM segment the browser's MediaRecorder emitted (one per
+   * ~3s timeslice), in order. When present, the blob is sent as one WS message
+   * per segment using these exact boundaries — the browser guarantees each is a
+   * valid segment, which a server-side parser cannot. When absent or invalid,
+   * we fall back to buildWebmFrames.
+   */
+  segmentSizes?: number[];
+}
+
+/**
+ * Slice the blob into frames at the browser's exact segment boundaries. Returns
+ * null if the sizes don't add up to the blob (truncated upload, re-encoded
+ * blob, etc.) so the caller can fall back rather than send malformed segments.
+ */
+function framesFromSegmentSizes(
+  bytes: Uint8Array,
+  sizes: number[],
+): Uint8Array[] | null {
+  if (!sizes.length) return null;
+  const total = sizes.reduce((n, s) => n + s, 0);
+  if (total !== bytes.byteLength) return null; // boundaries don't match the blob
+  const frames: Uint8Array[] = [];
+  let offset = 0;
+  for (const size of sizes) {
+    if (size <= 0) return null;
+    frames.push(bytes.subarray(offset, offset + size));
+    offset += size;
+  }
+  return frames;
 }
 
 export async function analyzeBlobOverWs(
   input: AnalyzeBlobInput,
 ): Promise<InterhumanAnalysisResponse> {
-  const { bytes, apiKey, config, wsUrl, durationSeconds } = input;
+  const { bytes, apiKey, config, wsUrl, durationSeconds, segmentSizes } = input;
   const url = wsUrl ?? DEFAULT_WS_URL;
 
   const signals: SignalEntry[] = [];
@@ -227,17 +257,19 @@ export async function analyzeBlobOverWs(
         });
       }
 
-      // Interhuman's stream endpoint caps each WS message at 32 MB, so a
-      // full-length pitch (~45 MB) can't go in one frame. Split on Cluster
-      // boundaries: the first frame carries the init segment (so it's a valid
-      // WebM), the rest are raw Cluster continuations. Splitting on arbitrary
-      // byte offsets inside a Cluster trips ih5004 (malformed/truncated), so
-      // buildWebmFrames only ever cuts between whole Clusters; if the blob
-      // can't be parsed it falls back to a single frame.
-      const frames = buildWebmFrames(bytes);
-      frameInfo = `total=${bytes.byteLength} frames=${frames.length} sizes=[${frames
-        .map((f) => f.byteLength)
-        .join(",")}]`;
+      // Interhuman wants the recording streamed as small self-contained WebM
+      // segments (first carries the header, rest are continuations). The
+      // browser's MediaRecorder already cut the blob into valid ~3s segments —
+      // we slice at exactly those byte boundaries. This is the reliable path:
+      // a server-side EBML parser guessing boundaries trips ih5004. Only when
+      // the browser sizes are missing/mismatched do we fall back to parsing.
+      const fromBrowser = segmentSizes
+        ? framesFromSegmentSizes(bytes, segmentSizes)
+        : null;
+      const frames = fromBrowser ?? buildWebmFrames(bytes);
+      frameInfo = `total=${bytes.byteLength} frames=${frames.length} src=${
+        fromBrowser ? "browser" : "parser"
+      }`;
       console.log("[analyze-blob] sending", frameInfo);
 
       const sendFrame = (i: number): void => {

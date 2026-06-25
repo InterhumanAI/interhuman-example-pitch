@@ -28,6 +28,7 @@ export default function RecordPitchPage() {
     recordedDuration: number,
     videoId?: string,
     audioBlob?: Blob,
+    segmentSizes?: number[],
   ) => {
     setDuration(recordedDuration);
     setError(null);
@@ -42,6 +43,7 @@ export default function RecordPitchPage() {
         duration: recordedDuration,
         mode: "free_pitch",
         videoId,
+        segmentSizes,
         onStreamCallbacks: {
           onStreaming: () => setCompressStatus("Uploading your pitch…"),
           onConnecting: () => setCompressStatus("Analyzing your pitch…"),
@@ -75,8 +77,9 @@ export default function RecordPitchPage() {
     recordedDuration: number,
     videoId?: string,
     audioBlob?: Blob,
+    segmentSizes?: number[],
   ) => {
-    await analyzeVideo(blob, recordedDuration, videoId, audioBlob);
+    await analyzeVideo(blob, recordedDuration, videoId, audioBlob, segmentSizes);
   };
 
   const handleSavedVideoSelect = async (video: StoredVideo) => {
