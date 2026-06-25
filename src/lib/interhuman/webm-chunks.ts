@@ -161,7 +161,12 @@ export interface BuildFramesOptions {
   maxFrameBytes?: number;
 }
 
-const DEFAULT_MAX_FRAME_BYTES = 4 * 1024 * 1024; // 4 MB — comfortably < 32 MB
+// Interhuman's stream endpoint rejects multi-frame chunked uploads (ih5004) —
+// it wants one self-contained WebM per session. So we keep the whole recording
+// in a single frame whenever it fits under the 32 MB message limit; recordings
+// are kept under this by capping the recorder bitrate. Chunking only kicks in
+// as a last-resort safety net for an unexpectedly oversized blob.
+const DEFAULT_MAX_FRAME_BYTES = 31 * 1024 * 1024; // just under the 32 MB WS limit
 
 /**
  * Build the ordered list of binary frames to send by slicing the *original*

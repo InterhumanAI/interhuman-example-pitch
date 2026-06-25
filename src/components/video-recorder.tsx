@@ -145,7 +145,11 @@ export function VideoRecorder({
 
     const recorder = new MediaRecorder(streamRef.current, {
       mimeType,
-      videoBitsPerSecond: 2500000,
+      // 1 Mbps keeps a full 3-min pitch (~25 MB) under Interhuman's 32 MB
+      // single-message limit so it ships as one self-contained WebM. The
+      // stream endpoint rejects multi-frame chunked uploads (ih5004), and
+      // 1 Mbps is ample for face/voice delivery analysis.
+      videoBitsPerSecond: 1000000,
       audioBitsPerSecond: 128000,
     });
     mediaRecorderRef.current = recorder;
