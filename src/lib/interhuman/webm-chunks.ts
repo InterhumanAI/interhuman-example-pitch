@@ -35,6 +35,27 @@ const LEVEL1_IDS = new Set<number>([
   0x1941a469, // Attachments
 ]);
 
+/**
+ * Locate the first Cluster element by scanning for its 4-byte ID
+ * (0x1F 0x43 0xB6 0x75). Everything before it is the init segment (EBML header
+ * + Segment header + Info + Tracks). Returns -1 if no Cluster is found. This is
+ * the boundary Interhuman's docs require for the MediaRecorder-timeslice case:
+ * extract the init segment from chunk 0 and prepend it to every later chunk.
+ */
+export function findFirstClusterStart(bytes: Uint8Array): number {
+  for (let i = 0; i + 3 < bytes.length; i++) {
+    if (
+      bytes[i] === 0x1f &&
+      bytes[i + 1] === 0x43 &&
+      bytes[i + 2] === 0xb6 &&
+      bytes[i + 3] === 0x75
+    ) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 export interface WebMSplit {
   /** Byte offset where the first Cluster begins (== init segment length). */
   firstClusterStart: number;

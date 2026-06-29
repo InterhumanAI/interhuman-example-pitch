@@ -2,7 +2,7 @@ import "server-only";
 
 import WebSocket from "ws";
 
-import { buildWebmFrames } from "./webm-chunks";
+import { buildWebmFrames, findFirstClusterStart } from "./webm-chunks";
 
 import type {
   ConversationQualityValues,
@@ -51,9 +51,18 @@ export interface AnalyzeBlobInput {
 }
 
 /**
- * Slice the blob into frames at the browser's exact segment boundaries. Returns
- * null if the sizes don't add up to the blob (truncated upload, re-encoded
- * blob, etc.) so the caller can fall back rather than send malformed segments.
+ * Slice the blob into WebM segments at the browser's exact MediaRecorder
+ * timeslice boundaries, then make each one independently decodable.
+ *
+ * Per Interhuman's streaming spec: with MediaRecorder timeslice only the FIRST
+ * chunk carries the WebM header (EBML + Tracks); every later chunk is a bare
+ * Cluster that won't parse on its own and trips ih5004. The fix is to extract
+ * the init segment (everything before the first Cluster, 0x1F43B675) from chunk
+ * 0 and PREPEND it to every subsequent chunk, so each message is a complete,
+ * self-contained WebM.
+ *
+ * Returns null if the sizes don't add up to the blob or the init segment can't
+ * be located, so the caller can fall back rather than send malformed segments.
  */
 function framesFromSegmentSizes(
   bytes: Uint8Array,
@@ -62,11 +71,28 @@ function framesFromSegmentSizes(
   if (!sizes.length) return null;
   const total = sizes.reduce((n, s) => n + s, 0);
   if (total !== bytes.byteLength) return null; // boundaries don't match the blob
+
+  // The init segment is the header bytes at the very start of chunk 0.
+  const firstClusterStart = findFirstClusterStart(bytes);
+  if (firstClusterStart <= 0) return null; // no header → can't build segments
+  const init = bytes.subarray(0, firstClusterStart);
+
   const frames: Uint8Array[] = [];
   let offset = 0;
-  for (const size of sizes) {
+  for (let i = 0; i < sizes.length; i++) {
+    const size = sizes[i];
     if (size <= 0) return null;
-    frames.push(bytes.subarray(offset, offset + size));
+    const chunk = bytes.subarray(offset, offset + size);
+    if (i === 0) {
+      // First chunk already contains the header — send it verbatim.
+      frames.push(chunk);
+    } else {
+      // Bare Cluster — prepend the init segment to make it self-contained.
+      const framed = new Uint8Array(init.byteLength + chunk.byteLength);
+      framed.set(init, 0);
+      framed.set(chunk, init.byteLength);
+      frames.push(framed);
+    }
     offset += size;
   }
   return frames;
