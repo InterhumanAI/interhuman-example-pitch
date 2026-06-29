@@ -14,5 +14,8 @@ export async function GET() {
     hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
     hasSupabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
     interhumanStreamUrl: process.env.INTERHUMAN_STREAM_URL ? "set" : "default",
+    hasStreamProxy:
+      !!process.env.STREAM_PROXY_WS_URL &&
+      !!process.env.DEMO_STREAM_PROXY_TOKEN_SECRET,
   });
 }

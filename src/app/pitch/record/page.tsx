@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InterhumanAnalysisResponse, PitchScore } from "@/types";
 import { StoredVideo, updateVideoAnalyzed } from "@/lib/video-storage";
 import { submitPitchAnalysis } from "@/lib/submit-pitch-analysis";
+import type { PitchAnalyzeApiResponse } from "@/types/pitch-api";
 import { ArrowLeft, Loader2 } from "lucide-react";
 
 type PageState = "record" | "analyzing" | "results";
@@ -23,34 +24,52 @@ export default function RecordPitchPage() {
   const [currentVideoBlob, setCurrentVideoBlob] = useState<Blob | null>(null);
   const [compressStatus, setCompressStatus] = useState<string | null>(null);
 
-  const analyzeVideo = async (
+  // Live path: the recording already streamed to the proxy, so we have the
+  // accumulated analysis + transcript in hand. Assemble the final score from
+  // them — no upload, no server-side WebSocket.
+  const handleRecordingComplete = async (
     blob: Blob,
     recordedDuration: number,
     videoId?: string,
-    audioBlob?: Blob,
-    segmentSizes?: number[],
+    analysisResult?: InterhumanAnalysisResponse,
+    transcript?: string,
   ) => {
     setDuration(recordedDuration);
     setError(null);
-    setCompressStatus(null);
+    setCompressStatus("Scoring your pitch…");
     setCurrentVideoBlob(blob);
     setPageState("analyzing");
 
+    if (!analysisResult) {
+      // The live stream failed to produce an analysis (e.g. proxy down). Don't
+      // silently fall back — surface it so the user can retry.
+      setError("We couldn't analyze your pitch in real time. Please try again.");
+      setPageState("record");
+      return;
+    }
+
     try {
-      const data = await submitPitchAnalysis({
-        blob,
-        audioBlob,
-        duration: recordedDuration,
-        mode: "free_pitch",
-        videoId,
-        segmentSizes,
-        onStreamCallbacks: {
-          onStreaming: () => setCompressStatus("Uploading your pitch…"),
-          onConnecting: () => setCompressStatus("Analyzing your pitch…"),
-          onProcessing: () => setCompressStatus("Finalizing results…"),
-          onError: (msg) => setCompressStatus(`Error: ${msg}`),
-        },
+      const res = await fetch("/api/pitch/score", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          analysis: analysisResult,
+          transcript: transcript ?? null,
+          duration: recordedDuration,
+          mode: "free_pitch",
+        }),
       });
+      if (!res.ok) {
+        let message = `Scoring failed (${res.status})`;
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body?.error) message = body.error;
+        } catch {
+          /* keep default */
+        }
+        throw new Error(message);
+      }
+      const data = (await res.json()) as PitchAnalyzeApiResponse;
       setAnalysis(data.analysis);
       setPitchScore(data.score);
       setPageState("results");
@@ -66,20 +85,55 @@ export default function RecordPitchPage() {
         }
       }
     } catch (err) {
-      console.error("Analysis error:", err);
-      setError(err instanceof Error ? err.message : "Failed to analyze your pitch. Please try again.");
+      console.error("Scoring error:", err);
+      setError(err instanceof Error ? err.message : "Failed to score your pitch. Please try again.");
       setPageState("record");
     }
   };
 
-  const handleRecordingComplete = async (
-    blob: Blob,
-    recordedDuration: number,
-    videoId?: string,
-    audioBlob?: Blob,
-    segmentSizes?: number[],
-  ) => {
-    await analyzeVideo(blob, recordedDuration, videoId, audioBlob, segmentSizes);
+  // Saved videos have no live stream (they were recorded earlier), so re-analysis
+  // uploads the blob and analyzes server-side via the legacy /api/pitch/analyze
+  // path. Known limitation: very long saved videos may still hit Interhuman's
+  // 32 MB frame limit (ih5004) on this path — live recordings avoid it.
+  const reanalyzeSavedVideo = async (video: StoredVideo) => {
+    setDuration(video.duration);
+    setError(null);
+    setCompressStatus("Uploading your pitch…");
+    setCurrentVideoBlob(video.blob);
+    setPageState("analyzing");
+
+    try {
+      const data = await submitPitchAnalysis({
+        blob: video.blob,
+        duration: video.duration,
+        mode: "free_pitch",
+        videoId: video.id,
+        onStreamCallbacks: {
+          onStreaming: () => setCompressStatus("Uploading your pitch…"),
+          onConnecting: () => setCompressStatus("Analyzing your pitch…"),
+          onProcessing: () => setCompressStatus("Finalizing results…"),
+          onError: (msg) => setCompressStatus(`Error: ${msg}`),
+        },
+      });
+      setAnalysis(data.analysis);
+      setPitchScore(data.score);
+      setPageState("results");
+
+      if (data.score) {
+        try {
+          await updateVideoAnalyzed(video.id, data.score.composite, {
+            pitchScore: data.score,
+            signals: data.analysis.signals || [],
+          });
+        } catch {
+          // Non-critical
+        }
+      }
+    } catch (err) {
+      console.error("Analysis error:", err);
+      setError(err instanceof Error ? err.message : "Failed to analyze your pitch. Please try again.");
+      setPageState("record");
+    }
   };
 
   const handleSavedVideoSelect = async (video: StoredVideo) => {
@@ -93,7 +147,7 @@ export default function RecordPitchPage() {
       setCurrentVideoBlob(video.blob);
       setPageState("results");
     } else {
-      await analyzeVideo(video.blob, video.duration, video.id);
+      await reanalyzeSavedVideo(video);
     }
   };
 

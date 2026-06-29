@@ -12,6 +12,7 @@ import { ArrowLeft, Loader2, Timer, Trophy, Zap, CheckCircle, FolderOpen, Play, 
 import { CHALLENGE_STATS_STORAGE_KEY } from "@/lib/brand";
 import { getAllVideos, StoredVideo, formatStorageSize } from "@/lib/video-storage";
 import { submitPitchAnalysis } from "@/lib/submit-pitch-analysis";
+import type { PitchAnalyzeApiResponse } from "@/types/pitch-api";
 
 type PageState = "intro" | "record" | "analyzing" | "results" | "select-video";
 
@@ -50,11 +51,69 @@ export default function ChallengePage() {
     }
   };
 
-  const analyzeBlob = async (
+  // Shared finalization once we have a final score + analysis, from either the
+  // live stream path or the saved-video upload path.
+  const applyResult = (data: PitchAnalyzeApiResponse) => {
+    setAnalysis(data.analysis);
+    setPitchScore(data.score);
+    setSavedToLeaderboard(data.savedToLeaderboard || false);
+    setPageState("results");
+    saveUserStats(data.score.composite);
+  };
+
+  // Live path: the recording streamed to the proxy during the 60s, so we score
+  // from the accumulated analysis + transcript (no upload, no Whisper).
+  const handleRecordingComplete = async (
     blob: Blob,
     recordedDuration: number,
-    audioBlob?: Blob,
+    _videoId?: string,
+    analysisResult?: InterhumanAnalysisResponse,
+    transcript?: string,
   ) => {
+    setPageState("analyzing");
+    setDuration(recordedDuration);
+    setError(null);
+    setCompressStatus("Scoring your pitch…");
+
+    if (!analysisResult) {
+      setError("We couldn't analyze your pitch in real time. Please try again.");
+      setPageState("record");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/pitch/score", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          analysis: analysisResult,
+          transcript: transcript ?? null,
+          duration: recordedDuration,
+          mode: "one_minute_challenge",
+          userName: userName.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        let message = `Scoring failed (${res.status})`;
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body?.error) message = body.error;
+        } catch {
+          /* keep default */
+        }
+        throw new Error(message);
+      }
+      applyResult((await res.json()) as PitchAnalyzeApiResponse);
+    } catch (err) {
+      console.error("Scoring error:", err);
+      setError(err instanceof Error ? err.message : "Failed to score your pitch. Please try again.");
+      setPageState("record");
+    }
+  };
+
+  // Saved-video path: no live stream, so upload and analyze server-side via the
+  // legacy route. (Long saved videos may still hit ih5004 — live avoids it.)
+  const analyzeSavedBlob = async (blob: Blob, recordedDuration: number) => {
     setPageState("analyzing");
     setDuration(recordedDuration);
     setError(null);
@@ -63,7 +122,6 @@ export default function ChallengePage() {
     try {
       const data = await submitPitchAnalysis({
         blob,
-        audioBlob,
         duration: recordedDuration,
         mode: "one_minute_challenge",
         userName: userName.trim() || undefined,
@@ -73,25 +131,12 @@ export default function ChallengePage() {
           onProcessing: () => setCompressStatus("Finalizing results…"),
         },
       });
-      setAnalysis(data.analysis);
-      setPitchScore(data.score);
-      setSavedToLeaderboard(data.savedToLeaderboard || false);
-      setPageState("results");
-      saveUserStats(data.score.composite);
+      applyResult(data);
     } catch (err) {
       console.error("Analysis error:", err);
       setError(err instanceof Error ? err.message : "Failed to analyze your pitch. Please try again.");
       setPageState(selectedVideo ? "select-video" : "record");
     }
-  };
-
-  const handleRecordingComplete = async (
-    blob: Blob,
-    recordedDuration: number,
-    _videoId?: string,
-    audioBlob?: Blob,
-  ) => {
-    await analyzeBlob(blob, recordedDuration, audioBlob);
   };
 
   const handleRetry = () => {
@@ -130,7 +175,7 @@ export default function ChallengePage() {
 
   const submitSelectedVideo = async () => {
     if (!selectedVideo) return;
-    await analyzeBlob(selectedVideo.blob, selectedVideo.duration);
+    await analyzeSavedBlob(selectedVideo.blob, selectedVideo.duration);
   };
 
   const cancelSelection = () => {

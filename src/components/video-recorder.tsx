@@ -11,11 +11,13 @@ import {
   formatStorageSize,
   StoredVideo,
 } from "@/lib/video-storage";
+import { PitchStreamClient } from "@/lib/interhuman/stream-client";
+import type { InterhumanAnalysisResponse } from "@/types";
 
-// Emit a WebM segment every 3s. Interhuman wants the recording streamed as
-// small self-contained segments (the first carries the init/header, the rest
-// are continuations); the browser cuts these on valid boundaries for us, which
-// a server-side parser could not reliably do. A 180s pitch yields ~60 segments.
+// Emit a WebM chunk every 3s. Each chunk is streamed live to the Interhuman
+// stream-proxy as one binary WS frame (one analysis window) as MediaRecorder
+// produces it — no buffering, no server-side re-slicing. A 180s pitch yields
+// ~60 windows.
 const TIMESLICE_MS = 3000;
 
 interface VideoRecorderProps {
@@ -24,8 +26,8 @@ interface VideoRecorderProps {
     blob: Blob,
     duration: number,
     videoId?: string,
-    audioBlob?: Blob,
-    segmentSizes?: number[],
+    analysis?: InterhumanAnalysisResponse,
+    transcript?: string,
   ) => void;
   mode?: "free" | "challenge";
   pitchMode?: "free_pitch" | "one_minute_challenge" | "qa_practice";
@@ -47,16 +49,25 @@ export function VideoRecorder({
 }: VideoRecorderProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  // Recorded chunks are kept only to rebuild the local playback/save blob on
+  // stop — analysis no longer uses them (each chunk is streamed live instead).
   const chunksRef = useRef<Blob[]>([]);
-  // Byte size of each ~3s timeslice the browser emits, in order. These are the
-  // exact, valid WebM segment boundaries — the server slices the uploaded blob
-  // at these offsets and streams one WS message per segment to Interhuman.
-  const segmentSizesRef = useRef<number[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  // Separate audio-only recorder feeds a small blob for server-side transcription.
-  const audioRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const recordedAudioBlobRef = useRef<Blob | null>(null);
+  // Live stream to the Interhuman proxy; assembled analysis + transcript is
+  // returned by finish() when recording stops.
+  const streamClientRef = useRef<PitchStreamClient | null>(null);
+  // The in-flight finalize started on stop; handleSubmit awaits it. Resolves to
+  // the assembled analysis + transcript (or null if the stream was never set up).
+  const finishPromiseRef = useRef<Promise<{
+    analysis: InterhumanAnalysisResponse;
+    transcript: string;
+  } | null> | null>(null);
+  // Latest recorded duration, read inside recorder.onstop to bound the stream.
+  const durationRef = useRef(0);
+  // Synchronous guard: startRecordingActual is invoked from inside a setState
+  // updater, which React StrictMode (dev) runs twice — without this it would
+  // mint two sessions and open two WebSockets.
+  const startingRef = useRef(false);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -115,6 +126,7 @@ export function VideoRecorder({
       interval = setInterval(() => {
         setDuration((d) => {
           const newDuration = d + 1;
+          durationRef.current = newDuration;
           if (newDuration >= maxDuration) {
             stopRecording();
           }
@@ -139,15 +151,36 @@ export function VideoRecorder({
     }, 1000);
   }, []);
 
-  const startRecordingActual = useCallback(() => {
+  const startRecordingActual = useCallback(async () => {
     if (!streamRef.current) return;
+    // Guard against a double-invoke (StrictMode runs the calling setState
+    // updater twice). Reset in stop/reset/error paths.
+    if (startingRef.current || mediaRecorderRef.current) return;
+    startingRef.current = true;
 
     setSavedVideoId(null);
     setSaveSuccess(false);
     chunksRef.current = [];
-    segmentSizesRef.current = [];
-    audioChunksRef.current = [];
-    recordedAudioBlobRef.current = null;
+    finishPromiseRef.current = null;
+
+    // Open the live analysis stream before recording. If it can't connect
+    // (proxy down / bad token), surface the error and don't record — there'd
+    // be nothing to analyze.
+    const client = new PitchStreamClient();
+    try {
+      await client.start();
+    } catch (err) {
+      console.error("Failed to start analysis stream:", err);
+      client.abort();
+      startingRef.current = false;
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Couldn't connect to the analysis service. Please try again.",
+      );
+      return;
+    }
+    streamClientRef.current = client;
 
     const mimeType = [
       "video/webm;codecs=vp9,opus",
@@ -157,10 +190,8 @@ export function VideoRecorder({
 
     const recorder = new MediaRecorder(streamRef.current, {
       mimeType,
-      // 1 Mbps is ample for face/voice delivery analysis and keeps per-segment
-      // sizes small. Size is no longer the constraint — we stream the recording
-      // to Interhuman as ~3s segments (see TIMESLICE_MS), so each WS message is
-      // well under the 32 MB limit.
+      // 1 Mbps is ample for face/voice delivery analysis and keeps each ~3s
+      // window small for the live WS frames (see TIMESLICE_MS).
       videoBitsPerSecond: 1000000,
       audioBitsPerSecond: 128000,
     });
@@ -168,14 +199,30 @@ export function VideoRecorder({
 
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) {
+        // Keep for local playback/save, and stream live for analysis.
         chunksRef.current.push(e.data);
-        segmentSizesRef.current.push(e.data.size);
+        streamClientRef.current?.sendChunk(e.data);
       }
     };
 
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: mimeType.split(";")[0] });
       setRecordedBlob(blob);
+      // MediaRecorder has flushed its final chunk by now, so finalize the
+      // stream in the background. handleSubmit awaits this when the user clicks
+      // Analyze, so finalize and the user's review overlap.
+      const c = streamClientRef.current;
+      finishPromiseRef.current = c
+        ? c
+            .finish(durationRef.current)
+            .catch((err) => {
+              console.error("Analysis stream finalize failed:", err);
+              return null;
+            })
+            .finally(() => {
+              streamClientRef.current = null;
+            })
+        : Promise.resolve(null);
     };
 
     recorder.onerror = () => {
@@ -183,55 +230,26 @@ export function VideoRecorder({
       setIsRecording(false);
     };
 
-    // Capture an audio-only blob in parallel for transcription. Sharing the
-    // live mic track means no second permission prompt, and the audio matches
-    // the video exactly. Failures here are non-fatal — content scoring is
-    // simply skipped server-side if no audio blob arrives.
-    audioRecorderRef.current = null;
-    try {
-      const audioTracks = streamRef.current.getAudioTracks();
-      if (audioTracks.length > 0) {
-        const audioStream = new MediaStream([audioTracks[0]]);
-        const audioMime = [
-          "audio/webm;codecs=opus",
-          "audio/webm",
-        ].find((m) => MediaRecorder.isTypeSupported(m)) || "audio/webm";
-        const audioRecorder = new MediaRecorder(audioStream, {
-          mimeType: audioMime,
-          audioBitsPerSecond: 64000,
-        });
-        audioRecorder.ondataavailable = (e) => {
-          if (e.data.size > 0) audioChunksRef.current.push(e.data);
-        };
-        audioRecorder.onstop = () => {
-          recordedAudioBlobRef.current = audioChunksRef.current.length
-            ? new Blob(audioChunksRef.current, { type: "audio/webm" })
-            : null;
-        };
-        audioRecorderRef.current = audioRecorder;
-      }
-    } catch (err) {
-      console.warn("Audio-only recorder unavailable:", err);
-      audioRecorderRef.current = null;
-    }
-
     try {
       recorder.start(TIMESLICE_MS);
-      audioRecorderRef.current?.start();
       setIsRecording(true);
       setDuration(0);
     } catch (err) {
       console.error("Failed to start recording:", err);
+      client.abort();
+      streamClientRef.current = null;
+      mediaRecorderRef.current = null;
+      startingRef.current = false;
       setError("Failed to start recording. Please try again.");
     }
   }, []);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
+      // recorder.onstop kicks off the stream finalize once the last chunk flushes.
       mediaRecorderRef.current.stop();
-      if (audioRecorderRef.current && audioRecorderRef.current.state !== "inactive") {
-        audioRecorderRef.current.stop();
-      }
+      mediaRecorderRef.current = null;
+      startingRef.current = false;
       setIsRecording(false);
       setIsPaused(false);
     }
@@ -240,10 +258,15 @@ export function VideoRecorder({
   const resetRecording = useCallback(() => {
     setRecordedBlob(null);
     setDuration(0);
+    durationRef.current = 0;
     setSavedVideoId(null);
     setSaveSuccess(false);
-    audioChunksRef.current = [];
-    recordedAudioBlobRef.current = null;
+    // Discard any pending/finished stream result from the previous take.
+    streamClientRef.current?.abort();
+    streamClientRef.current = null;
+    finishPromiseRef.current = null;
+    mediaRecorderRef.current = null;
+    startingRef.current = false;
     if (videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
     }
@@ -320,12 +343,17 @@ export function VideoRecorder({
       }
     }
 
+    // Wait for the live analysis stream to finalize (started on stop). The
+    // promise never rejects — it resolves to null if the stream failed, in
+    // which case the page surfaces an error.
+    const result = (await finishPromiseRef.current) ?? null;
+
     onRecordingComplete(
       recordedBlob,
       duration,
       videoId || undefined,
-      recordedAudioBlobRef.current || undefined,
-      segmentSizesRef.current.length ? [...segmentSizesRef.current] : undefined,
+      result?.analysis,
+      result?.transcript,
     );
   }, [recordedBlob, duration, onRecordingComplete, autoSave, savedVideoId, pitchMode, questionId, questionText]);
 
