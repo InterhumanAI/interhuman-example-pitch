@@ -3,7 +3,7 @@
 import { useRef, useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { cn, formatDuration } from "@/lib/utils";
-import { Video, Square, Circle, RotateCcw, Upload, Save, CheckCircle } from "lucide-react";
+import { Video, Square, Circle, RotateCcw, Upload, Save, CheckCircle, Loader2 } from "lucide-react";
 import {
   saveVideo,
   generateVideoId,
@@ -68,6 +68,10 @@ export function VideoRecorder({
   // updater, which React StrictMode (dev) runs twice — without this it would
   // mint two sessions and open two WebSockets.
   const startingRef = useRef(false);
+  // Synchronous guard for Analyze. handleSubmit awaits the stream finalize,
+  // which can take up to FINALIZE_HARD_MS — without this, every extra click in
+  // that window queued another onRecordingComplete and another scoring request.
+  const submittingRef = useRef(false);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -79,6 +83,7 @@ export function VideoRecorder({
   const [savedVideoId, setSavedVideoId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const startCamera = useCallback(async () => {
     try {
@@ -313,48 +318,65 @@ export function VideoRecorder({
 
   const handleSubmit = useCallback(async () => {
     if (!recordedBlob) return;
+    // Clicking Analyze starts an await that can run for tens of seconds (the
+    // stream finalize below). Guard synchronously so repeat clicks are no-ops
+    // instead of queueing duplicate submissions.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    // Flip the button into a pending state in the same tick as the click, so
+    // the UI acknowledges it immediately rather than looking dead while the
+    // finalize runs.
+    setIsSubmitting(true);
 
-    let videoId = savedVideoId;
-    if (autoSave && !videoId) {
-      try {
-        videoId = generateVideoId();
-        let thumbnailUrl: string | undefined;
+    try {
+      let videoId = savedVideoId;
+      if (autoSave && !videoId) {
         try {
-          thumbnailUrl = await generateThumbnail(recordedBlob);
+          videoId = generateVideoId();
+          let thumbnailUrl: string | undefined;
+          try {
+            thumbnailUrl = await generateThumbnail(recordedBlob);
+          } catch {
+            // Continue without thumbnail
+          }
+
+          const storedVideo: StoredVideo = {
+            id: videoId,
+            blob: recordedBlob,
+            duration,
+            mode: pitchMode,
+            questionId,
+            questionText,
+            createdAt: new Date(),
+            analyzed: false,
+            thumbnailUrl,
+          };
+          await saveVideo(storedVideo);
+          setSavedVideoId(videoId);
         } catch {
-          // Continue without thumbnail
+          // Continue even if save fails
         }
-
-        const storedVideo: StoredVideo = {
-          id: videoId,
-          blob: recordedBlob,
-          duration,
-          mode: pitchMode,
-          questionId,
-          questionText,
-          createdAt: new Date(),
-          analyzed: false,
-          thumbnailUrl,
-        };
-        await saveVideo(storedVideo);
-        setSavedVideoId(videoId);
-      } catch {
-        // Continue even if save fails
       }
+
+      // Wait for the live analysis stream to finalize (started on stop). The
+      // promise never rejects — it resolves to null if the stream failed, in
+      // which case the page surfaces an error.
+      const result = (await finishPromiseRef.current) ?? null;
+
+      onRecordingComplete(
+        recordedBlob,
+        duration,
+        videoId || undefined,
+        result?.analysis,
+        result?.transcript,
+      );
+    } finally {
+      // The parent switches to its own "analyzing" view on success, but on the
+      // error path it returns us to the recorder — so release the guard either
+      // way, otherwise Analyze would stay permanently dead after one failure.
+      submittingRef.current = false;
+      setIsSubmitting(false);
     }
-
-    // Wait for the live analysis stream to finalize (started on stop). The
-    // promise never rejects — it resolves to null if the stream failed, in
-    // which case the page surfaces an error.
-    const result = (await finishPromiseRef.current) ?? null;
-
-    onRecordingComplete(
-      recordedBlob,
-      duration,
-      videoId || undefined,
-      result?.analysis,
-      result?.transcript,
-    );
   }, [recordedBlob, duration, onRecordingComplete, autoSave, savedVideoId, pitchMode, questionId, questionText]);
 
   useEffect(() => {
@@ -479,6 +501,7 @@ export function VideoRecorder({
               size="lg"
               variant="outline"
               onClick={resetRecording}
+              disabled={isSubmitting}
               className="gap-2"
             >
               <RotateCcw className="w-4 h-4" />
@@ -489,7 +512,7 @@ export function VideoRecorder({
                 size="lg"
                 variant="outline"
                 onClick={saveVideoLocally}
-                disabled={isSaving}
+                disabled={isSaving || isSubmitting}
                 className="gap-2"
               >
                 <Save className="w-4 h-4" />
@@ -499,14 +522,27 @@ export function VideoRecorder({
             <Button
               size="xl"
               onClick={handleSubmit}
+              disabled={isSubmitting}
+              aria-busy={isSubmitting}
               className="gap-2"
             >
-              <Upload className="w-5 h-5" />
-              Analyze
+              {isSubmitting ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Upload className="w-5 h-5" />
+              )}
+              {isSubmitting ? "Analyzing…" : "Analyze"}
             </Button>
           </>
         )}
       </div>
+
+      {isSubmitting && (
+        <p className="text-sm text-muted-foreground text-center max-w-sm">
+          Finishing your analysis — this can take up to a minute. You can leave
+          this page open.
+        </p>
+      )}
 
       {recordedBlob && (
         <p className="text-sm text-muted-foreground">
