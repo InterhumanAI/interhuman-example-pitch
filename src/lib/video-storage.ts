@@ -146,6 +146,13 @@ export function generateVideoId(): string {
   return `video_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
+// A thumbnail is a nice-to-have, but it is generated on the critical path before
+// a pitch is submitted — so it must never be able to block forever. MediaRecorder
+// blobs frequently report `duration: Infinity` (or NaN before metadata lands), and
+// a seek on such a blob can silently never fire `seeked`, leaving the promise
+// pending for the rest of the session.
+const THUMBNAIL_TIMEOUT_MS = 5000;
+
 export async function generateThumbnail(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
@@ -153,30 +160,52 @@ export async function generateThumbnail(blob: Blob): Promise<string> {
     video.muted = true;
     video.playsInline = true;
 
+    const objectUrl = URL.createObjectURL(blob);
+    let settled = false;
+
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      URL.revokeObjectURL(objectUrl);
+      video.removeAttribute("src");
+      fn();
+    };
+
+    const timer = setTimeout(
+      () => finish(() => reject(new Error("Timed out generating thumbnail"))),
+      THUMBNAIL_TIMEOUT_MS,
+    );
+
     video.onloadeddata = () => {
-      video.currentTime = Math.min(1, video.duration / 2);
+      // MediaRecorder blobs commonly report `duration: Infinity` (and NaN before
+      // metadata lands). `Math.min(1, Infinity)` is 1, which seeks fine — but a
+      // NaN target throws inside this handler, so `seeked` would never fire and
+      // the promise would hang. Fall back to 1s for any non-finite duration.
+      const midpoint = video.duration / 2;
+      video.currentTime = Number.isFinite(midpoint) ? Math.min(1, midpoint) : 1;
     };
 
     video.onseeked = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = 320;
-      canvas.height = 180;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
+      finish(() => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 320;
+        canvas.height = 180;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Could not get canvas context"));
+          return;
+        }
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         resolve(canvas.toDataURL("image/jpeg", 0.7));
-      } else {
-        reject(new Error("Could not get canvas context"));
-      }
-      URL.revokeObjectURL(video.src);
+      });
     };
 
     video.onerror = () => {
-      URL.revokeObjectURL(video.src);
-      reject(new Error("Failed to load video for thumbnail"));
+      finish(() => reject(new Error("Failed to load video for thumbnail")));
     };
 
-    video.src = URL.createObjectURL(blob);
+    video.src = objectUrl;
   });
 }
 
