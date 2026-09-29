@@ -95,6 +95,18 @@ export async function readLocalBlob(blobId: string): Promise<LocalBlob | null> {
   return { bytes, contentType };
 }
 
+/**
+ * Delete a local-disk blob (both the bytes and its metadata sidecar). Used to
+ * mirror Vercel Blob's del() in local dev so retention behaves the same way
+ * in both environments — analysis inputs are removed right after use.
+ */
+export async function deleteLocalBlob(blobId: string): Promise<void> {
+  await Promise.all([
+    rm(blobPath(blobId), { force: true }),
+    rm(blobMetaPath(blobId), { force: true }),
+  ]);
+}
+
 export function parseLocalBlobId(url: string): string | null {
   try {
     const u = new URL(url);

@@ -12,6 +12,7 @@ import {
   formatStorageSize,
   getStorageUsage,
 } from "@/lib/video-storage";
+import { getVideoFileExtension } from "@/lib/utils";
 import {
   Play,
   Trash2,
@@ -72,7 +73,7 @@ export default function MyVideosPage() {
     const url = URL.createObjectURL(video.blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `pitch-${new Date(video.createdAt).toISOString().split("T")[0]}.webm`;
+    link.download = `pitch-${new Date(video.createdAt).toISOString().split("T")[0]}.${getVideoFileExtension(video.blob)}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

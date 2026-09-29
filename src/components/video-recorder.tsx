@@ -12,6 +12,7 @@ import {
   StoredVideo,
 } from "@/lib/video-storage";
 import { PitchStreamClient } from "@/lib/interhuman/stream-client";
+import { getSupportedMimeType } from "@/lib/video-compression";
 import type { InterhumanAnalysisResponse } from "@/types";
 
 // Emit a WebM chunk every 3s. Each chunk is streamed live to the Interhuman
@@ -79,6 +80,11 @@ export function VideoRecorder({
   const [savedVideoId, setSavedVideoId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  // Set when the live analysis stream couldn't be established (e.g. Safari
+  // recording a codec the proxy doesn't stream well, or the proxy briefly
+  // down). Recording still proceeds — onRecordingComplete is called with no
+  // analysisResult, and callers fall back to upload-then-analyze.
+  const [liveAnalysisUnavailable, setLiveAnalysisUnavailable] = useState(false);
 
   const startCamera = useCallback(async () => {
     try {
@@ -163,38 +169,54 @@ export function VideoRecorder({
     chunksRef.current = [];
     finishPromiseRef.current = null;
 
-    // Open the live analysis stream before recording. If it can't connect
-    // (proxy down / bad token), surface the error and don't record — there'd
-    // be nothing to analyze.
+    // Open the live analysis stream before recording. Some browsers/codecs
+    // (notably Safari, which records video/mp4 rather than WebM) aren't
+    // guaranteed to work with the live proxy, and the proxy itself may be
+    // briefly unavailable. Rather than blocking recording entirely, we record
+    // regardless and let the caller fall back to upload-then-analyze when no
+    // live analysisResult comes back (see onstop below).
     const client = new PitchStreamClient();
+    setLiveAnalysisUnavailable(false);
     try {
       await client.start();
+      streamClientRef.current = client;
     } catch (err) {
-      console.error("Failed to start analysis stream:", err);
+      console.warn(
+        "Live analysis stream unavailable — will analyze after upload instead:",
+        err,
+      );
       client.abort();
+      streamClientRef.current = null;
+      setLiveAnalysisUnavailable(true);
+    }
+
+    // Pick the best MIME type the browser actually supports (Chrome/Firefox/
+    // Edge report WebM support; Safari only supports MP4). Previously this
+    // list only contained WebM variants and silently fell back to a hardcoded
+    // "video/webm" even when unsupported — on Safari that made `new
+    // MediaRecorder(...)` below throw synchronously, which was never caught,
+    // leaving the recorder permanently stuck (startingRef never reset).
+    const mimeType = getSupportedMimeType();
+
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(streamRef.current, {
+        mimeType,
+        // 1 Mbps is ample for face/voice delivery analysis and keeps each ~3s
+        // window small for the live WS frames (see TIMESLICE_MS).
+        videoBitsPerSecond: 1000000,
+        audioBitsPerSecond: 128000,
+      });
+    } catch (err) {
+      console.error("Failed to create MediaRecorder:", err);
+      streamClientRef.current?.abort();
+      streamClientRef.current = null;
       startingRef.current = false;
       setError(
-        err instanceof Error
-          ? err.message
-          : "Couldn't connect to the analysis service. Please try again.",
+        "Your browser doesn't support video recording. Please try a recent version of Chrome, Firefox, Edge, or Safari.",
       );
       return;
     }
-    streamClientRef.current = client;
-
-    const mimeType = [
-      "video/webm;codecs=vp9,opus",
-      "video/webm;codecs=vp8,opus",
-      "video/webm",
-    ].find((m) => MediaRecorder.isTypeSupported(m)) || "video/webm";
-
-    const recorder = new MediaRecorder(streamRef.current, {
-      mimeType,
-      // 1 Mbps is ample for face/voice delivery analysis and keeps each ~3s
-      // window small for the live WS frames (see TIMESLICE_MS).
-      videoBitsPerSecond: 1000000,
-      audioBitsPerSecond: 128000,
-    });
     mediaRecorderRef.current = recorder;
 
     recorder.ondataavailable = (e) => {
@@ -410,6 +432,14 @@ export function VideoRecorder({
               )}
             >
               {formatDuration(timeRemaining)}
+            </span>
+          </div>
+        )}
+
+        {isRecording && liveAnalysisUnavailable && (
+          <div className="absolute bottom-4 left-4 right-4 text-center">
+            <span className="text-xs text-white bg-black/60 px-3 py-1 rounded-full">
+              Live analysis unavailable — we&apos;ll analyze your pitch after you finish recording.
             </span>
           </div>
         )}

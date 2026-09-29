@@ -2,6 +2,7 @@
 
 import { uploadInChunks, type UploadAuth } from "@/lib/uploads/multipart-upload";
 import { uploadToBlob, type BlobUploadResult } from "@/lib/uploads/blob-client-upload";
+import { getConsentForSubmission } from "@/lib/consent";
 import type { PitchAnalyzeApiResponse } from "@/types/pitch-api";
 
 export type { PitchAnalyzeApiResponse };
@@ -35,14 +36,22 @@ export type SubmitPitchAnalysisMeta = {
   onStreamCallbacks?: StreamingAnalysisCallbacks;
 };
 
-function makePathname(mode: string): string {
-  const slug = `${mode}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  return `pitches/${slug}.webm`;
+function extensionForContentType(contentType: string): string {
+  const base = contentType.split(";")[0].trim().toLowerCase();
+  if (base === "video/mp4" || base === "audio/mp4" || base === "audio/m4a") {
+    return base.startsWith("audio") ? "m4a" : "mp4";
+  }
+  return "webm";
 }
 
-function makeAudioPathname(mode: string): string {
+function makePathname(mode: string, contentType: string): string {
   const slug = `${mode}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  return `pitch-audio/${slug}.webm`;
+  return `pitches/${slug}.${extensionForContentType(contentType)}`;
+}
+
+function makeAudioPathname(mode: string, contentType: string): string {
+  const slug = `${mode}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return `pitch-audio/${slug}.${extensionForContentType(contentType)}`;
 }
 
 async function signUpload(pathname: string): Promise<UploadAuth> {
@@ -127,12 +136,26 @@ export async function submitPitchAnalysis(
     onStreamCallbacks?.onStreaming?.();
 
     // Upload video and (optional) audio concurrently to avoid serial latency.
-    const videoUpload = uploadOne(blob, makePathname(mode), "video/webm");
+    // Use the blob's actual recorded type (e.g. video/mp4 on Safari, which
+    // doesn't support WebM recording) rather than assuming video/webm — the
+    // pathname extension and stored content-type must match what was really
+    // recorded so playback/downloads work correctly.
+    const videoContentType = blob.type || "video/webm";
+    const videoUpload = uploadOne(
+      blob,
+      makePathname(mode, videoContentType),
+      videoContentType,
+    );
 
     const audioUpload = audioBlob
       ? (async () => {
           try {
-            return await uploadOne(audioBlob, makeAudioPathname(mode), "audio/webm");
+            const audioContentType = audioBlob.type || "audio/webm";
+            return await uploadOne(
+              audioBlob,
+              makeAudioPathname(mode, audioContentType),
+              audioContentType,
+            );
           } catch (err) {
             // Audio is optional — a failure here just means delivery-only scoring.
             console.warn("Audio upload failed, continuing without content score:", err);
@@ -168,6 +191,7 @@ export async function submitPitchAnalysis(
       userName: userName ?? null,
       questionId: questionId ?? null,
       segmentSizes: segmentSizes ?? null,
+      consent: getConsentForSubmission(),
     }),
   });
 

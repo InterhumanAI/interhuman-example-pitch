@@ -1,12 +1,12 @@
 import "server-only";
 
-import { get } from "@vercel/blob";
+import { del, get } from "@vercel/blob";
 import { NextResponse } from "next/server";
 
 import { analyzeBlobOverWs } from "@/lib/interhuman/analyze-blob";
 import { completePitchAnalysis } from "@/lib/complete-pitch-analysis";
 import { analyzeContentFromAudio } from "@/lib/transcribe-pitch";
-import { parseLocalBlobId, readLocalBlob } from "@/lib/uploads/local-store";
+import { deleteLocalBlob, parseLocalBlobId, readLocalBlob } from "@/lib/uploads/local-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +29,8 @@ interface AnalyzePayload {
   include?: string[];
   /** Byte size of each ~3s WebM segment from the browser, in order. */
   segmentSizes?: number[] | null;
+  /** Consent record captured client-side before recording started — see src/lib/consent.ts. */
+  consent?: { version: number; acceptedAt: string } | null;
 }
 
 class BlobFetchError extends Error {
@@ -97,6 +99,27 @@ async function fetchBlobBytes(url: string, maxBytes: number): Promise<Uint8Array
   return bytes;
 }
 
+/**
+ * Best-effort delete of an uploaded blob (video or audio) once we're done
+ * with it, regardless of whether analysis succeeded or failed. We never
+ * retain the recording server-side beyond the analysis request itself — see
+ * the Privacy Policy. A delete failure must never surface to the client or
+ * block the response; it's logged and swallowed.
+ */
+async function deleteBlobBestEffort(url: string | null | undefined): Promise<void> {
+  if (!url) return;
+  try {
+    const localBlobId = parseLocalBlobId(url);
+    if (localBlobId) {
+      await deleteLocalBlob(localBlobId);
+      return;
+    }
+    await del(url);
+  } catch (err) {
+    console.warn("[/api/pitch/analyze] failed to delete blob after analysis", err);
+  }
+}
+
 export async function POST(request: Request) {
   const apiKey = process.env.INTERHUMAN_API_KEY;
   if (!apiKey) {
@@ -129,74 +152,90 @@ export async function POST(request: Request) {
   }
 
   const mode = payload.mode || "free_pitch";
+  const audioBlobUrl =
+    payload.audioBlobUrl && /^https?:\/\//.test(payload.audioBlobUrl)
+      ? payload.audioBlobUrl
+      : null;
 
-  let bytes: Uint8Array;
   try {
-    bytes = await fetchBlobBytes(blobUrl, MAX_BLOB_BYTES);
-  } catch (err) {
-    if (err instanceof BlobFetchError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    console.error("[/api/pitch/analyze] fetch blob failed", err);
-    return NextResponse.json({ error: "Failed to fetch blob" }, { status: 502 });
-  }
-
-  // Fetch the optional separate audio blob for content scoring. A failure here
-  // must not break the delivery path — fall back to delivery-only.
-  let audioBytes: Uint8Array | null = null;
-  if (payload.audioBlobUrl && /^https?:\/\//.test(payload.audioBlobUrl)) {
+    let bytes: Uint8Array;
     try {
-      audioBytes = await fetchBlobBytes(payload.audioBlobUrl, MAX_AUDIO_BYTES);
+      bytes = await fetchBlobBytes(blobUrl, MAX_BLOB_BYTES);
     } catch (err) {
-      console.warn("[/api/pitch/analyze] audio blob fetch failed, skipping content score", err);
+      if (err instanceof BlobFetchError) {
+        return NextResponse.json({ error: err.message }, { status: err.status });
+      }
+      console.error("[/api/pitch/analyze] fetch blob failed", err);
+      return NextResponse.json({ error: "Failed to fetch blob" }, { status: 502 });
     }
-  }
 
-  try {
-    // Run delivery (Interhuman) and content (OpenAI) analysis concurrently so
-    // content scoring adds minimal wall-clock. analyzeContentFromAudio never
-    // throws — it returns null on any failure or when OpenAI isn't configured.
-    const [analysis, content] = await Promise.all([
-      analyzeBlobOverWs({
-        bytes,
-        apiKey,
-        durationSeconds: duration,
-        segmentSizes: Array.isArray(payload.segmentSizes)
-          ? payload.segmentSizes
-          : undefined,
-        config: {
-          include: payload.include ?? [
-            "conversation_quality_overall",
-            "conversation_quality_timeline",
-          ],
-        },
-      }),
-      audioBytes
-        ? analyzeContentFromAudio({
-            audioBytes,
-            audioContentType: "audio/webm",
-            durationSeconds: duration,
-            mode,
-          })
-        : Promise.resolve(null),
+    // Fetch the optional separate audio blob for content scoring. A failure here
+    // must not break the delivery path — fall back to delivery-only.
+    let audioBytes: Uint8Array | null = null;
+    if (audioBlobUrl) {
+      try {
+        audioBytes = await fetchBlobBytes(audioBlobUrl, MAX_AUDIO_BYTES);
+      } catch (err) {
+        console.warn("[/api/pitch/analyze] audio blob fetch failed, skipping content score", err);
+      }
+    }
+
+    try {
+      // Run delivery (Interhuman) and content (OpenAI) analysis concurrently so
+      // content scoring adds minimal wall-clock. analyzeContentFromAudio never
+      // throws — it returns null on any failure or when OpenAI isn't configured.
+      const [analysis, content] = await Promise.all([
+        analyzeBlobOverWs({
+          bytes,
+          apiKey,
+          durationSeconds: duration,
+          segmentSizes: Array.isArray(payload.segmentSizes)
+            ? payload.segmentSizes
+            : undefined,
+          config: {
+            include: payload.include ?? [
+              "conversation_quality_overall",
+              "conversation_quality_timeline",
+            ],
+          },
+        }),
+        audioBytes
+          ? analyzeContentFromAudio({
+              audioBytes,
+              audioContentType: "audio/webm",
+              durationSeconds: duration,
+              mode,
+            })
+          : Promise.resolve(null),
+      ]);
+
+      const result = await completePitchAnalysis({
+        analysis,
+        duration,
+        mode,
+        userName: payload.userName ?? null,
+        questionId: payload.questionId ?? null,
+        // We never persist a pointer to the recording — both blobs are
+        // deleted in the `finally` below right after this request finishes,
+        // so a stored URL would immediately be dead and misleading.
+        consent: payload.consent ?? null,
+        content,
+      });
+
+      return NextResponse.json(result);
+    } catch (err) {
+      console.error("[/api/pitch/analyze] failed", err);
+      const message = err instanceof Error ? err.message : "Analysis failed";
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
+  } finally {
+    // Delete the uploaded video/audio now that we're done with them, whether
+    // analysis succeeded or failed. This is what makes it true that we don't
+    // retain the recording server-side after analysis — see Privacy Policy.
+    await Promise.all([
+      deleteBlobBestEffort(blobUrl),
+      deleteBlobBestEffort(audioBlobUrl),
     ]);
-
-    const result = await completePitchAnalysis({
-      analysis,
-      duration,
-      mode,
-      userName: payload.userName ?? null,
-      questionId: payload.questionId ?? null,
-      videoUrl: blobUrl,
-      videoPathname: payload.videoPathname ?? null,
-      content,
-    });
-
-    return NextResponse.json(result);
-  } catch (err) {
-    console.error("[/api/pitch/analyze] failed", err);
-    const message = err instanceof Error ? err.message : "Analysis failed";
-    return NextResponse.json({ error: message }, { status: 502 });
   }
 }
 

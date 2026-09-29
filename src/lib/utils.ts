@@ -26,3 +26,12 @@ export function getScoreColor(score: number): string {
   if (score >= 30) return "text-orange-500";
   return "text-red-500";
 }
+
+/**
+ * File extension matching a recorded video Blob's actual MIME type. Safari
+ * records video/mp4 (it doesn't support WebM), so downloads must not hardcode
+ * ".webm" or the resulting file plays incorrectly in some players.
+ */
+export function getVideoFileExtension(blob: Blob): string {
+  return blob.type.includes("mp4") ? "mp4" : "webm";
+}

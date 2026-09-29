@@ -13,16 +13,32 @@ CREATE TABLE "Pitch" (
     "mode" "PitchMode" NOT NULL,
     "videoUrl" TEXT,
     "videoPathname" TEXT,
+    "consentVersion" INTEGER,
+    "consentAcceptedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "Pitch_pkey" PRIMARY KEY ("id")
 );
 -- visitorId is an anonymous identifier (anon_xxx).
--- videoUrl / videoPathname point at the Vercel Blob copy of the recording;
--- the browser also keeps a copy in IndexedDB for fast local playback.
+-- videoUrl / videoPathname are LEGACY and unused going forward: the app used
+-- to point these at the Vercel Blob copy of the recording, but that copy is
+-- now deleted immediately after analysis (see /api/pitch/analyze), so a
+-- populated URL would be a dead link. New rows never set these columns. The
+-- browser separately keeps its own copy in IndexedDB for local playback.
+-- Existing deployments may run `UPDATE "Pitch" SET "videoUrl" = NULL,
+-- "videoPathname" = NULL;` to clear stale pointers, or drop the columns
+-- entirely once no code depends on them.
+-- consentVersion / consentAcceptedAt are a server-side audit trail of the
+-- consent shown in <ConsentGate> at recording time (see src/lib/consent.ts) —
+-- which disclosure version the user agreed to, and when. This lets us
+-- demonstrate consent was given (GDPR Art. 7(1)) rather than relying solely
+-- on the client-side localStorage record, which the user controls and could
+-- be cleared or forged.
 
 -- Migration for existing deployments:
 -- ALTER TABLE "Pitch" ADD COLUMN IF NOT EXISTS "videoUrl" TEXT;
 -- ALTER TABLE "Pitch" ADD COLUMN IF NOT EXISTS "videoPathname" TEXT;
+-- ALTER TABLE "Pitch" ADD COLUMN IF NOT EXISTS "consentVersion" INTEGER;
+-- ALTER TABLE "Pitch" ADD COLUMN IF NOT EXISTS "consentAcceptedAt" TIMESTAMP(3);
 
 -- CreateTable: PitchAnalysis
 -- Stores the Interhuman AI analysis results

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { VideoRecorder } from "@/components/video-recorder";
+import { ConsentGate } from "@/components/consent-gate";
 import { ResultsDisplay } from "@/components/results-display";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,6 +13,7 @@ import { ArrowLeft, Loader2, Timer, Trophy, Zap, CheckCircle, FolderOpen, Play, 
 import { CHALLENGE_STATS_STORAGE_KEY } from "@/lib/brand";
 import { getAllVideos, StoredVideo, formatStorageSize } from "@/lib/video-storage";
 import { submitPitchAnalysis } from "@/lib/submit-pitch-analysis";
+import { getConsentForSubmission } from "@/lib/consent";
 import type { PitchAnalyzeApiResponse } from "@/types/pitch-api";
 
 type PageState = "intro" | "record" | "analyzing" | "results" | "select-video";
@@ -76,8 +78,11 @@ export default function ChallengePage() {
     setCompressStatus("Scoring your pitch…");
 
     if (!analysisResult) {
-      setError("We couldn't analyze your pitch in real time. Please try again.");
-      setPageState("record");
+      // The live stream didn't produce an analysis (e.g. Safari's live proxy
+      // path isn't available, or the proxy was briefly down). Fall back to
+      // the same upload-then-analyze path used for saved videos instead of
+      // failing outright — the user already has a usable recording.
+      await analyzeSavedBlob(blob, recordedDuration);
       return;
     }
 
@@ -91,6 +96,7 @@ export default function ChallengePage() {
           duration: recordedDuration,
           mode: "one_minute_challenge",
           userName: userName.trim() || null,
+          consent: getConsentForSubmission(),
         }),
       });
       if (!res.ok) {
@@ -298,18 +304,19 @@ export default function ChallengePage() {
 
         {pageState === "select-video" && (
           <div className="max-w-3xl mx-auto">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl font-bold mb-2">Select a Saved Video</h2>
-              <p className="text-muted-foreground">
-                Choose a video between 45-60 seconds from your browser storage
-              </p>
-            </div>
-
-            {error && (
-              <div className="mb-6 p-4 bg-destructive/10 text-destructive rounded-lg text-center">
-                {error}
+            <ConsentGate>
+              <div className="text-center mb-8">
+                <h2 className="text-2xl font-bold mb-2">Select a Saved Video</h2>
+                <p className="text-muted-foreground">
+                  Choose a video between 45-60 seconds from your browser storage
+                </p>
               </div>
-            )}
+
+              {error && (
+                <div className="mb-6 p-4 bg-destructive/10 text-destructive rounded-lg text-center">
+                  {error}
+                </div>
+              )}
 
             {savedVideos.length === 0 ? (
               <div className="text-center py-12">
@@ -432,6 +439,7 @@ export default function ChallengePage() {
                 </div>
               </div>
             )}
+            </ConsentGate>
           </div>
         )}
 
@@ -450,12 +458,14 @@ export default function ChallengePage() {
               </div>
             )}
 
-            <VideoRecorder
-              maxDuration={60}
-              onRecordingComplete={handleRecordingComplete}
-              mode="challenge"
-              pitchMode="one_minute_challenge"
-            />
+            <ConsentGate>
+              <VideoRecorder
+                maxDuration={60}
+                onRecordingComplete={handleRecordingComplete}
+                mode="challenge"
+                pitchMode="one_minute_challenge"
+              />
+            </ConsentGate>
           </div>
         )}
 

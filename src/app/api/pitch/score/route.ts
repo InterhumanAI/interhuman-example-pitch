@@ -23,6 +23,8 @@ interface ScorePayload {
   mode?: string;
   userName?: string | null;
   questionId?: string | null;
+  /** Consent record captured client-side before recording started — see src/lib/consent.ts. */
+  consent?: { version: number; acceptedAt: string } | null;
 }
 
 /**
@@ -77,6 +79,7 @@ export async function POST(request: Request) {
       mode,
       userName: payload.userName ?? null,
       questionId: payload.questionId ?? null,
+      consent: payload.consent ?? null,
       content,
     });
     return NextResponse.json(result);

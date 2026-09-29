@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { VideoRecorder } from "@/components/video-recorder";
+import { ConsentGate } from "@/components/consent-gate";
 import { ResultsDisplay } from "@/components/results-display";
 import { SavedVideos } from "@/components/saved-videos";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InterhumanAnalysisResponse, PitchScore } from "@/types";
 import { StoredVideo, updateVideoAnalyzed } from "@/lib/video-storage";
 import { submitPitchAnalysis } from "@/lib/submit-pitch-analysis";
+import { getConsentForSubmission } from "@/lib/consent";
 import type { PitchAnalyzeApiResponse } from "@/types/pitch-api";
 import { ArrowLeft, Loader2 } from "lucide-react";
 
@@ -41,10 +43,46 @@ export default function RecordPitchPage() {
     setPageState("analyzing");
 
     if (!analysisResult) {
-      // The live stream failed to produce an analysis (e.g. proxy down). Don't
-      // silently fall back — surface it so the user can retry.
-      setError("We couldn't analyze your pitch in real time. Please try again.");
-      setPageState("record");
+      // The live stream didn't produce an analysis (e.g. Safari's live proxy
+      // path isn't available, or the proxy was briefly down). Fall back to
+      // uploading the recorded blob and analyzing server-side instead of
+      // failing outright — the user already has a usable recording.
+      setCompressStatus("Uploading your pitch…");
+      try {
+        const data = await submitPitchAnalysis({
+          blob,
+          duration: recordedDuration,
+          mode: "free_pitch",
+          videoId,
+          onStreamCallbacks: {
+            onStreaming: () => setCompressStatus("Uploading your pitch…"),
+            onConnecting: () => setCompressStatus("Analyzing your pitch…"),
+            onProcessing: () => setCompressStatus("Finalizing results…"),
+          },
+        });
+        setAnalysis(data.analysis);
+        setPitchScore(data.score);
+        setPageState("results");
+
+        if (videoId && data.score) {
+          try {
+            await updateVideoAnalyzed(videoId, data.score.composite, {
+              pitchScore: data.score,
+              signals: data.analysis.signals || [],
+            });
+          } catch {
+            // Non-critical
+          }
+        }
+      } catch (err) {
+        console.error("Fallback analysis error:", err);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "We couldn't analyze your pitch. Please try again.",
+        );
+        setPageState("record");
+      }
       return;
     }
 
@@ -57,6 +95,7 @@ export default function RecordPitchPage() {
           transcript: transcript ?? null,
           duration: recordedDuration,
           mode: "free_pitch",
+          consent: getConsentForSubmission(),
         }),
       });
       if (!res.ok) {
@@ -210,13 +249,15 @@ export default function RecordPitchPage() {
 
               <TabsContent value="record">
                 <div className="max-w-3xl mx-auto">
-                  <VideoRecorder
-                    maxDuration={180}
-                    onRecordingComplete={handleRecordingComplete}
-                    mode="free"
-                    pitchMode="free_pitch"
-                    autoSave={true}
-                  />
+                  <ConsentGate>
+                    <VideoRecorder
+                      maxDuration={180}
+                      onRecordingComplete={handleRecordingComplete}
+                      mode="free"
+                      pitchMode="free_pitch"
+                      autoSave={true}
+                    />
+                  </ConsentGate>
 
                   <div className="mt-8 p-6 bg-secondary/30 rounded-lg">
                     <h3 className="font-semibold mb-3">Tips for a great pitch:</h3>
@@ -232,10 +273,12 @@ export default function RecordPitchPage() {
               </TabsContent>
 
               <TabsContent value="saved">
-                <SavedVideos
-                  onSelectVideo={handleSavedVideoSelect}
-                  onViewResults={handleViewResults}
-                />
+                <ConsentGate>
+                  <SavedVideos
+                    onSelectVideo={handleSavedVideoSelect}
+                    onViewResults={handleViewResults}
+                  />
+                </ConsentGate>
               </TabsContent>
             </Tabs>
           </div>

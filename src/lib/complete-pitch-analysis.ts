@@ -9,24 +9,28 @@ function generateId() {
   return Math.random().toString(36).substring(2) + Date.now().toString(36);
 }
 
+export interface ConsentInfo {
+  version: number;
+  acceptedAt: string;
+}
+
 export async function completePitchAnalysis({
   analysis,
   duration,
   mode,
   userName = null,
   questionId = null,
-  videoUrl = null,
-  videoPathname = null,
   content = null,
+  consent = null,
 }: {
   analysis: InterhumanAnalysisResponse;
   duration: number;
   mode: string;
   userName?: string | null;
   questionId?: string | null;
-  videoUrl?: string | null;
-  videoPathname?: string | null;
   content?: ContentScore | null;
+  /** Client-captured consent record — see src/lib/consent.ts. Persisted as an audit trail on the Pitch row. */
+  consent?: ConsentInfo | null;
 }): Promise<PitchAnalyzeApiResponse> {
   const scoreWithoutPercentile = calculatePitchScore(analysis, duration, content);
   const percentile = await calculatePercentile(scoreWithoutPercentile.composite, mode);
@@ -47,8 +51,7 @@ export async function completePitchAnalysis({
       questionId,
       analysis,
       score,
-      videoUrl,
-      videoPathname,
+      consent,
     });
     pitchId = result?.pitchId || null;
     scoreId = result?.scoreId || null;
@@ -72,8 +75,7 @@ async function savePitchToDatabase({
   questionId,
   analysis,
   score,
-  videoUrl,
-  videoPathname,
+  consent,
 }: {
   userName: string | null;
   duration: number;
@@ -81,8 +83,7 @@ async function savePitchToDatabase({
   questionId: string | null;
   analysis: InterhumanAnalysisResponse;
   score: PitchScore;
-  videoUrl?: string | null;
-  videoPathname?: string | null;
+  consent?: ConsentInfo | null;
 }): Promise<{ pitchId: string; scoreId: string } | null> {
   try {
     const supabaseAdmin = getSupabaseAdmin();
@@ -100,8 +101,13 @@ async function savePitchToDatabase({
       mode,
       createdAt: new Date().toISOString(),
     };
-    if (videoUrl) pitchRow.videoUrl = videoUrl;
-    if (videoPathname) pitchRow.videoPathname = videoPathname;
+    // Audit trail: which disclosure version the user consented to, and when.
+    // Lets us demonstrate consent was given (GDPR Art. 7(1)) rather than
+    // relying solely on the client-side localStorage record.
+    if (consent && Number.isFinite(consent.version) && consent.acceptedAt) {
+      pitchRow.consentVersion = consent.version;
+      pitchRow.consentAcceptedAt = consent.acceptedAt;
+    }
 
     const { error: pitchError } = await supabaseAdmin.from("Pitch").insert(pitchRow);
 

@@ -10,7 +10,7 @@ import {
   formatStorageSize,
   StoredVideo,
 } from "@/lib/video-storage";
-import { formatDuration } from "@/lib/utils";
+import { formatDuration, getVideoFileExtension } from "@/lib/utils";
 import { Trash2, Play, Upload, HardDrive, Clock, Calendar, BarChart3, Download } from "lucide-react";
 
 interface SavedVideosProps {
@@ -91,7 +91,7 @@ export function SavedVideos({ onSelectVideo, onViewResults, className }: SavedVi
     a.href = url;
     const date = new Date(video.createdAt);
     const dateStr = date.toISOString().split("T")[0];
-    a.download = `pitch-${getModeLabel(video.mode).toLowerCase().replace(/\s+/g, "-")}-${dateStr}.webm`;
+    a.download = `pitch-${getModeLabel(video.mode).toLowerCase().replace(/\s+/g, "-")}-${dateStr}.${getVideoFileExtension(video.blob)}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -28,7 +28,7 @@ export default function TermsOfServicePage() {
 
       <main className="container mx-auto px-4 py-12 max-w-3xl">
         <h1 className="text-3xl font-bold mb-2">Terms of Service</h1>
-        <p className="text-muted-foreground mb-8">Last updated: April 2026</p>
+        <p className="text-muted-foreground mb-8">Last updated: September 2026</p>
 
         <div className="prose prose-neutral dark:prose-invert max-w-none space-y-8">
           <section>
@@ -40,7 +40,25 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-3">2. Description of Service</h2>
+            <h2 className="text-xl font-semibold mb-3">2. Eligibility</h2>
+            <p className="text-muted-foreground leading-relaxed">
+              You must be at least 18 years old to use {APP_NAME}, and you must have the
+              legal capacity to enter into these terms. This is stricter than the minimum
+              age for consenting to online services in some countries — we require 18
+              because recording a pitch involves your face and voice being analyzed and
+              used to train a third party&apos;s models, which we are not willing to
+              process on the basis of a minor&apos;s consent. We do not offer a parental
+              or guardian consent route. If you are under 18, please do not record a
+              pitch. See the{" "}
+              <Link href="/privacy" className="text-primary hover:underline">
+                Privacy Policy
+              </Link>{" "}
+              for how recordings are processed.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold mb-3">3. Description of Service</h2>
             <p className="text-muted-foreground leading-relaxed">
               {APP_NAME} is a pitch practice tool that uses AI-powered video analysis to provide 
               feedback on your presentation delivery. The service includes:
@@ -66,7 +84,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-3">3. User Responsibilities</h2>
+            <h2 className="text-xl font-semibold mb-3">4. User Responsibilities</h2>
             <p className="text-muted-foreground leading-relaxed mb-3">
               You agree to:
             </p>
@@ -95,7 +113,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-3">4. Content Ownership</h2>
+            <h2 className="text-xl font-semibold mb-3">5. Content Ownership</h2>
             <p className="text-muted-foreground leading-relaxed">
               You retain all rights to your video recordings and content. By using the service, 
               you grant us a limited license to process your videos through our AI analysis 
@@ -105,7 +123,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-3">5. AI Analysis Disclaimer</h2>
+            <h2 className="text-xl font-semibold mb-3">6. AI Analysis Disclaimer</h2>
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 mb-4">
               <p className="text-sm text-amber-700 dark:text-amber-400">
                 AI-generated feedback is for practice purposes only and should not be considered 
@@ -122,7 +140,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-3">6. Leaderboard & Public Display</h2>
+            <h2 className="text-xl font-semibold mb-3">7. Leaderboard & Public Display</h2>
             <p className="text-muted-foreground leading-relaxed">
               If you participate in challenges and submit scores to the leaderboard, your 
               display name and score will be publicly visible. You can choose any display 
@@ -132,7 +150,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-3">7. Usage Limits</h2>
+            <h2 className="text-xl font-semibold mb-3">8. Usage Limits</h2>
             <p className="text-muted-foreground leading-relaxed">
               We may impose limits on the number of video analyses or other features to ensure 
               fair usage and service availability. These limits may vary based on whether you 
@@ -142,7 +160,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-3">8. Service Availability</h2>
+            <h2 className="text-xl font-semibold mb-3">9. Service Availability</h2>
             <p className="text-muted-foreground leading-relaxed">
               We strive to maintain service availability but do not guarantee uninterrupted 
               access. The service may be temporarily unavailable for maintenance, updates, 
@@ -152,7 +170,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-3">9. Limitation of Liability</h2>
+            <h2 className="text-xl font-semibold mb-3">10. Limitation of Liability</h2>
             <p className="text-muted-foreground leading-relaxed">
               To the maximum extent permitted by law, {APP_NAME} and its operators shall not 
               be liable for any indirect, incidental, special, consequential, or punitive damages, 
@@ -162,7 +180,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-3">10. Changes to Terms</h2>
+            <h2 className="text-xl font-semibold mb-3">11. Changes to Terms</h2>
             <p className="text-muted-foreground leading-relaxed">
               We may update these terms from time to time. Continued use of the service after 
               changes constitutes acceptance of the new terms. We will make reasonable efforts 
@@ -171,7 +189,7 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-3">11. Termination</h2>
+            <h2 className="text-xl font-semibold mb-3">12. Termination</h2>
             <p className="text-muted-foreground leading-relaxed">
               We reserve the right to suspend or terminate your access to the service at any 
               time for violation of these terms or for any other reason at our discretion. 
@@ -180,11 +198,11 @@ export default function TermsOfServicePage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-3">12. Contact</h2>
+            <h2 className="text-xl font-semibold mb-3">13. Contact</h2>
             <p className="text-muted-foreground leading-relaxed">
               For questions about these terms, contact us at{" "}
-              <a href="mailto:youremail@yourdomain.com" className="text-primary hover:underline">
-                youremail@yourdomain.com
+              <a href="mailto:contact@interhuman.ai" className="text-primary hover:underline">
+                contact@interhuman.ai
               </a>
             </p>
           </section>
