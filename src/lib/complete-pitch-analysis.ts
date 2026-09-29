@@ -104,12 +104,41 @@ async function savePitchToDatabase({
     // Audit trail: which disclosure version the user consented to, and when.
     // Lets us demonstrate consent was given (GDPR Art. 7(1)) rather than
     // relying solely on the client-side localStorage record.
+    const consentFields: Record<string, unknown> = {};
     if (consent && Number.isFinite(consent.version) && consent.acceptedAt) {
-      pitchRow.consentVersion = consent.version;
-      pitchRow.consentAcceptedAt = consent.acceptedAt;
+      consentFields.consentVersion = consent.version;
+      consentFields.consentAcceptedAt = consent.acceptedAt;
     }
 
-    const { error: pitchError } = await supabaseAdmin.from("Pitch").insert(pitchRow);
+    let { error: pitchError } = await supabaseAdmin
+      .from("Pitch")
+      .insert({ ...pitchRow, ...consentFields });
+
+    // The consent audit columns were added after this table shipped (see the
+    // ALTER statements in supabase/schema.sql). If a deployment is pointed at a
+    // database that hasn't had them applied yet, Postgres rejects the whole
+    // insert with 42703 / PGRST204 and we'd silently lose the pitch entirely —
+    // scores, leaderboard entry and all. Losing the audit trail is bad; losing
+    // the whole record is worse, so fall back to inserting without it and log
+    // loudly enough that the missing migration gets noticed.
+    const isMissingColumn =
+      pitchError &&
+      Object.keys(consentFields).length > 0 &&
+      (pitchError.code === "42703" ||
+        pitchError.code === "PGRST204" ||
+        /column .* does not exist|could not find the '.*' column/i.test(
+          pitchError.message ?? "",
+        ));
+
+    if (isMissingColumn) {
+      console.error(
+        "[completePitchAnalysis] Pitch.consentVersion/consentAcceptedAt are missing " +
+          "from this database — saving the pitch WITHOUT its consent audit trail. " +
+          "Apply the ALTER TABLE statements in supabase/schema.sql to fix this.",
+        pitchError,
+      );
+      ({ error: pitchError } = await supabaseAdmin.from("Pitch").insert(pitchRow));
+    }
 
     if (pitchError) {
       console.error("Error saving pitch:", pitchError);
