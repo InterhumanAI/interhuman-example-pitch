@@ -105,9 +105,9 @@ export function ConsentGate({ children, className }: ConsentGateProps) {
                 >
                   Interhuman AI
                 </a>{" "}
-                analyzes your video and audio; OpenAI scores your transcript.
-                We never keep your recording — only the transcript, scores, and
-                feedback.
+                analyzes your video and audio to estimate behavioural signals
+                like confidence and stress. OpenAI scores your transcript. We never keep your
+                recording — only the transcript, scores, and feedback.
               </span>
             </div>
             <div className="flex gap-2">

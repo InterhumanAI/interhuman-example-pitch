@@ -28,7 +28,7 @@ export default function TermsOfServicePage() {
 
       <main className="container mx-auto px-4 py-12 max-w-3xl">
         <h1 className="text-3xl font-bold mb-2">Terms of Service</h1>
-        <p className="text-muted-foreground mb-8">Last updated: September 2026</p>
+        <p className="text-muted-foreground mb-8">Last updated: October 2026</p>
 
         <div className="prose prose-neutral dark:prose-invert max-w-none space-y-8">
           <section>
@@ -200,7 +200,8 @@ export default function TermsOfServicePage() {
           <section>
             <h2 className="text-xl font-semibold mb-3">13. Contact</h2>
             <p className="text-muted-foreground leading-relaxed">
-              For questions about these terms, contact us at{" "}
+              {APP_NAME} is operated by Interhuman AI ApS (CVR 44393034), Højbro Pl. 10,
+              1200 Copenhagen, Denmark. For questions about these terms, contact us at{" "}
               <a href="mailto:contact@interhuman.ai" className="text-primary hover:underline">
                 contact@interhuman.ai
               </a>

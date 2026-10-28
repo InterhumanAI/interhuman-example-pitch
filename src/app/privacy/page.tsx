@@ -28,7 +28,7 @@ export default function PrivacyPolicyPage() {
 
       <main className="container mx-auto px-4 py-12 max-w-3xl">
         <h1 className="text-3xl font-bold mb-2">Privacy Policy</h1>
-        <p className="text-muted-foreground mb-8">Last updated: September 2026</p>
+        <p className="text-muted-foreground mb-8">Last updated: October 2026</p>
 
         <div className="prose prose-neutral dark:prose-invert max-w-none space-y-8">
           <section>
@@ -37,6 +37,19 @@ export default function PrivacyPolicyPage() {
               This policy explains what data
               we collect, how it&apos;s processed, who we share it with, and your rights.
               It should be read together with the consent screen shown before you record.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold mb-3">Who Is Responsible</h2>
+            <p className="text-muted-foreground leading-relaxed">
+              {APP_NAME} is operated by <strong className="text-foreground">Interhuman AI
+              ApS</strong> (CVR 44393034), Højbro Pl. 10, 1200 Copenhagen, Denmark, which
+              is the controller of the personal data described in this policy. You can
+              reach us, including our data protection officer, at{" "}
+              <a href="mailto:contact@interhuman.ai" className="text-primary hover:underline">
+                contact@interhuman.ai
+              </a>.
             </p>
           </section>
 
@@ -212,8 +225,19 @@ export default function PrivacyPolicyPage() {
                 <strong className="text-foreground">Pseudonymized:</strong> Interhuman
                 applies automated redaction to transcripts and metadata before training,
                 but the recording itself still contains your face and voice — it is
-                not pseudonymized. Interhuman never resells this data, uses it
-                for advertising, or shares it with other third parties.
+                not pseudonymized. Interhuman does not sell this data or use it
+                for advertising or marketing profiles. It may share it only with vetted
+                sub-processors and contractors who help operate or improve its service,
+                under confidentiality and security obligations (see{" "}
+                <a
+                  href="https://trust.interhuman.ai"
+                  className="text-primary hover:underline"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Interhuman&apos;s sub-processor list
+                </a>
+                ).
               </p>
               <p className="text-muted-foreground leading-relaxed">
                 <strong className="text-foreground">Retention:</strong> your
@@ -252,9 +276,13 @@ export default function PrivacyPolicyPage() {
             <h2 className="text-xl font-semibold mb-3">Automated Scoring</h2>
             <p className="text-muted-foreground leading-relaxed">
               The scores and feedback you receive are generated automatically from the
-              Interhuman and OpenAI analysis described above. They are informational only
-              — intended to help you practice — and are not used to make any decision
-              about you.
+              Interhuman and OpenAI analysis described above. The Interhuman analysis
+              infers behavioural and social signals — such as confidence, hesitation,
+              stress, or engagement — from your facial expressions, body language and
+              voice, so it works like an emotion-recognition system and you are being
+              told it is in operation. These are probabilistic estimates, not facts about
+              you. The results are informational only — intended to help you practice —
+              and are not used to make any decision about you.
             </p>
           </section>
 
@@ -354,7 +382,8 @@ export default function PrivacyPolicyPage() {
           <section>
             <h2 className="text-xl font-semibold mb-3">Contact</h2>
             <p className="text-muted-foreground leading-relaxed">
-              For privacy questions or data deletion requests, contact us at{" "}
+              For privacy questions or data deletion requests, contact Interhuman AI ApS,
+              Højbro Pl. 10, 1200 Copenhagen, Denmark, at{" "}
               <a href="mailto:contact@interhuman.ai" className="text-primary hover:underline">
                 contact@interhuman.ai
               </a>
