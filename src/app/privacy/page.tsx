@@ -34,7 +34,7 @@ export default function PrivacyPolicyPage() {
           <section>
             <h2 className="text-xl font-semibold mb-3">Overview</h2>
             <p className="text-muted-foreground leading-relaxed">
-              This policy explains what data
+              This Privacy Policy explains what data
               we collect, how it&apos;s processed, who we share it with, and your rights.
               It should be read together with the consent screen shown before you record.
             </p>
@@ -45,7 +45,7 @@ export default function PrivacyPolicyPage() {
             <p className="text-muted-foreground leading-relaxed">
               {APP_NAME} is operated by <strong className="text-foreground">Interhuman AI
               ApS</strong> (CVR 44393034), Højbro Pl. 10, 1200 Copenhagen, Denmark, which
-              is the controller of the personal data described in this policy. You can
+              is the controller of the personal data described in this Privacy Policy. You can
               reach us, including our data protection officer, at{" "}
               <a href="mailto:contact@interhuman.ai" className="text-primary hover:underline">
                 contact@interhuman.ai
@@ -371,7 +371,7 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-3">Changes to This Policy</h2>
+            <h2 className="text-xl font-semibold mb-3">Changes to This Privacy Policy</h2>
             <p className="text-muted-foreground leading-relaxed">
               If we materially change what we disclose here, we bump the version of the
               consent shown before recording, which re-prompts every user for fresh
