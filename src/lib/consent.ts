@@ -22,7 +22,7 @@
 const CONSENT_STORAGE_KEY = "thepitchpractice_consent";
 
 /** Bump this whenever the disclosure text in <ConsentGate> materially changes. */
-export const CONSENT_VERSION = 6;
+export const CONSENT_VERSION = 7;
 
 export interface ConsentRecord {
   version: number;

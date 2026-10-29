@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Sparkles } from "lucide-react";
-import { APP_NAME } from "@/lib/brand";
+import { APP_NAME, OPERATOR } from "@/lib/brand";
 
 export const metadata = {
   title: `Terms of Service - ${APP_NAME}`,
@@ -28,7 +28,7 @@ export default function TermsOfServicePage() {
 
       <main className="container mx-auto px-4 py-12 max-w-3xl">
         <h1 className="text-3xl font-bold mb-2">Terms of Service</h1>
-        <p className="text-muted-foreground mb-8">Last updated: September 2026</p>
+        <p className="text-muted-foreground mb-8">Last updated: October 2026</p>
 
         <div className="prose prose-neutral dark:prose-invert max-w-none space-y-8">
           <section>
@@ -46,7 +46,7 @@ export default function TermsOfServicePage() {
               legal capacity to enter into these terms. This is stricter than the minimum
               age for consenting to online services in some countries — we require 18
               because recording a pitch involves your face and voice being analyzed and
-              used to train a third party&apos;s models, which we are not willing to
+              used to train AI models, which we are not willing to
               process on the basis of a minor&apos;s consent. We do not offer a parental
               or guardian consent route. If you are under 18, please do not record a
               pitch. See the{" "}
@@ -200,9 +200,10 @@ export default function TermsOfServicePage() {
           <section>
             <h2 className="text-xl font-semibold mb-3">13. Contact</h2>
             <p className="text-muted-foreground leading-relaxed">
-              For questions about these terms, contact us at{" "}
-              <a href="mailto:contact@interhuman.ai" className="text-primary hover:underline">
-                contact@interhuman.ai
+              {APP_NAME} is operated by {OPERATOR.name} ({OPERATOR.registration}),{" "}
+              {OPERATOR.address}. For questions about these terms, contact us at{" "}
+              <a href={`mailto:${OPERATOR.contactEmail}`} className="text-primary hover:underline">
+                {OPERATOR.contactEmail}
               </a>
             </p>
           </section>

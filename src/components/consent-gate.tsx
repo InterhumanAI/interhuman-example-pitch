@@ -105,16 +105,17 @@ export function ConsentGate({ children, className }: ConsentGateProps) {
                 >
                   Interhuman AI
                 </a>{" "}
-                analyzes your video and audio; OpenAI scores your transcript.
-                We never keep your recording — only the transcript, scores, and
-                feedback.
+                is an emotion-recognition system: it analyzes your video and audio
+                to estimate behavioral signals like confidence and stress. OpenAI
+                scores your transcript. This app doesn&apos;t store your recording —
+                only the transcript, scores, and feedback.
               </span>
             </div>
             <div className="flex gap-2">
               <ShieldCheck className="w-4 h-4 text-primary shrink-0 mt-0.5" />
               <span>
-                Interhuman also uses your recording — to
-                train their models under their{" "}
+                Interhuman also uses your recording — your face and voice, which
+                people may review or label — to train their models under their{" "}
                 <a
                   href="https://docs.interhuman.ai/explanations/model-improvement-program"
                   target="_blank"
