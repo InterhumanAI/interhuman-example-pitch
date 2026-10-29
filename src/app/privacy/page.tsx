@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Sparkles } from "lucide-react";
-import { APP_NAME } from "@/lib/brand";
+import { APP_NAME, OPERATOR } from "@/lib/brand";
 
 export const metadata = {
   title: `Privacy Policy - ${APP_NAME}`,
@@ -42,14 +42,48 @@ export default function PrivacyPolicyPage() {
 
           <section>
             <h2 className="text-xl font-semibold mb-3">Who Is Responsible</h2>
+            <p className="text-muted-foreground leading-relaxed mb-3">
+              {APP_NAME} is operated by{" "}
+              <strong className="text-foreground">{OPERATOR.name}</strong> (
+              {OPERATOR.registration}), {OPERATOR.address}. {OPERATOR.name} is the
+              controller of all personal data described in this Privacy Policy. That
+              covers two things:
+            </p>
+            <ul className="space-y-2 text-muted-foreground mb-3">
+              <li className="flex gap-2">
+                <span className="text-primary">•</span>
+                <span><strong className="text-foreground">Running the app:</strong> your scores, transcripts, leaderboard entries and consent records</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="text-primary">•</span>
+                <span>
+                  <strong className="text-foreground">Analyzing your recording and the Model Improvement Program:</strong>{" "}
+                  {OPERATOR.isAnalysisProvider
+                    ? `the Interhuman AI analysis platform is run by the same company, so ${OPERATOR.name} also decides how your recording is analyzed and used to train models`
+                    : "analysis by the Interhuman AI platform, and its use of your recording to train models under the Model Improvement Program"}
+                </span>
+              </li>
+            </ul>
+            <p className="text-muted-foreground leading-relaxed mb-3">
+              Where this policy says <em>&ldquo;our servers&rdquo;</em> it means this
+              app&apos;s own infrastructure (hosting and database), which is separate
+              from the Interhuman AI analysis platform.
+            </p>
             <p className="text-muted-foreground leading-relaxed">
-              {APP_NAME} is operated by <strong className="text-foreground">Interhuman AI
-              ApS</strong> (CVR 44393034), Højbro Pl. 10, 1200 Copenhagen, Denmark, which
-              is the controller of the personal data described in this Privacy Policy. You can
-              reach us, including our data protection officer, at{" "}
-              <a href="mailto:contact@interhuman.ai" className="text-primary hover:underline">
-                contact@interhuman.ai
-              </a>.
+              Contact us at{" "}
+              <a href={`mailto:${OPERATOR.contactEmail}`} className="text-primary hover:underline">
+                {OPERATOR.contactEmail}
+              </a>
+              .
+              {OPERATOR.dpo && (
+                <>
+                  {" "}Our data protection officer is {OPERATOR.dpo.name}, reachable at{" "}
+                  <a href={`mailto:${OPERATOR.dpo.email}`} className="text-primary hover:underline">
+                    {OPERATOR.dpo.email}
+                  </a>
+                  .
+                </>
+              )}
             </p>
           </section>
 
@@ -57,7 +91,9 @@ export default function PrivacyPolicyPage() {
             <h2 className="text-xl font-semibold mb-3">How Your Recording Is Processed</h2>
             <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4 mb-4">
               <p className="text-sm font-medium text-green-700 dark:text-green-400">
-                We never retain your video or audio on our servers after analysis.
+                This app&apos;s own servers never keep your video or audio after analysis.
+                The Interhuman AI platform keeps a copy for model training for up to 18
+                months — see Model Improvement Program below.
               </p>
             </div>
             <ul className="space-y-2 text-muted-foreground">
@@ -67,7 +103,7 @@ export default function PrivacyPolicyPage() {
               </li>
               <li className="flex gap-2">
                 <span className="text-primary">•</span>
-                <span>Your recording streams live to Interhuman AI for analysis — our servers never receive a copy of it at all</span>
+                <span>Your recording streams live to the Interhuman AI analysis platform — this app&apos;s own servers never receive a copy of it at all</span>
               </li>
               <li className="flex gap-2">
                 <span className="text-primary">•</span>
@@ -128,9 +164,9 @@ export default function PrivacyPolicyPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold mb-3">Third-Party Services</h2>
+            <h2 className="text-xl font-semibold mb-3">Services We Use</h2>
             <p className="text-muted-foreground leading-relaxed mb-4">
-              We use the following third-party services to provide this app:
+              We use the following services to provide this app:
             </p>
             <ul className="space-y-3 text-muted-foreground">
               <li className="flex gap-2">
@@ -138,7 +174,10 @@ export default function PrivacyPolicyPage() {
                 <div>
                   <strong className="text-foreground">Interhuman AI</strong> — Analyzes
                   your video and audio for behavioral signals (confidence, clarity, energy,
-                  and similar). Also trains its own models on your recording under the
+                  and similar). {OPERATOR.isAnalysisProvider
+                    ? `The platform is run by ${OPERATOR.name}, the same company that operates this app, so this is a separate system rather than a separate company. `
+                    : ""}
+                  It also trains its own models on your recording under the
                   Model Improvement Program described below.
                   See{" "}
                   <a
@@ -226,18 +265,24 @@ export default function PrivacyPolicyPage() {
                 applies automated redaction to transcripts and metadata before training,
                 but the recording itself still contains your face and voice — it is
                 not pseudonymized. Interhuman does not sell this data or use it
-                for advertising or marketing profiles. It may share it only with vetted
+                for advertising or marketing profiles. It may share it with vetted
                 sub-processors and contractors who help operate or improve its service,
-                under confidentiality and security obligations (see{" "}
-                <a
-                  href="https://trust.interhuman.ai"
-                  className="text-primary hover:underline"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Interhuman&apos;s sub-processor list
-                </a>
-                ).
+                under confidentiality and security obligations. This may include people
+                who review or label recordings to improve the models.
+                {OPERATOR.subprocessorsUrl && (
+                  <>
+                    {" "}See the{" "}
+                    <a
+                      href={OPERATOR.subprocessorsUrl}
+                      className="text-primary hover:underline"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      list of sub-processors
+                    </a>
+                    .
+                  </>
+                )}
               </p>
               <p className="text-muted-foreground leading-relaxed">
                 <strong className="text-foreground">Retention:</strong> your
@@ -277,11 +322,10 @@ export default function PrivacyPolicyPage() {
             <p className="text-muted-foreground leading-relaxed">
               The scores and feedback you receive are generated automatically from the
               Interhuman and OpenAI analysis described above. The Interhuman analysis
-              infers behavioural and social signals — such as confidence, hesitation,
-              stress, or engagement — from your facial expressions, body language and
-              voice, so it works like an emotion-recognition system and you are being
-              told it is in operation. These are probabilistic estimates, not facts about
-              you. The results are informational only — intended to help you practice —
+              is an emotion recognition system: it infers behavioral and social
+              signals — such as confidence, hesitation, stress, or engagement — from
+              your facial expressions, body language and voice. These are probabilistic
+              estimates, not facts about you. The results are informational only — intended to help you practice —
               and are not used to make any decision about you.
             </p>
           </section>
@@ -303,7 +347,7 @@ export default function PrivacyPolicyPage() {
               than the lower digital-consent age some countries allow (13 in Denmark, for
               example) because recording a pitch involves explicit consent to processing
               your face and voice — treated as biometric data under Art. 9 — and use of
-              that recording to train a third party&apos;s models. We are not willing to
+              that recording to train AI models. We are not willing to
               rely on a minor&apos;s consent for that, and we do not offer a parental or
               guardian consent route. Please don&apos;t record a pitch if you&apos;re
               under 18.
@@ -382,10 +426,10 @@ export default function PrivacyPolicyPage() {
           <section>
             <h2 className="text-xl font-semibold mb-3">Contact</h2>
             <p className="text-muted-foreground leading-relaxed">
-              For privacy questions or data deletion requests, contact Interhuman AI ApS,
-              Højbro Pl. 10, 1200 Copenhagen, Denmark, at{" "}
-              <a href="mailto:contact@interhuman.ai" className="text-primary hover:underline">
-                contact@interhuman.ai
+              For privacy questions or data deletion requests, contact {OPERATOR.name},
+              {" "}{OPERATOR.address}, at{" "}
+              <a href={`mailto:${OPERATOR.contactEmail}`} className="text-primary hover:underline">
+                {OPERATOR.contactEmail}
               </a>
             </p>
           </section>
