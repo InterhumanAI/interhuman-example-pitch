@@ -181,7 +181,7 @@ export default function PrivacyPolicyPage() {
                   Model Improvement Program described below.
                   See{" "}
                   <a
-                    href="https://interhuman.ai/privacy"
+                    href="https://www.interhuman.ai/privacy-policy"
                     className="text-primary hover:underline"
                     target="_blank"
                     rel="noopener noreferrer"
