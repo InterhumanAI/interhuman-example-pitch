@@ -73,10 +73,6 @@ export default function PrivacyPolicyPage() {
                 <span className="text-primary">•</span>
                 <span>If live analysis isn&apos;t available (e.g. some browsers, or re-analyzing a saved video), we instead upload the recording to our storage, send it to Interhuman AI for analysis, and delete our copy immediately once analysis finishes — whether it succeeds or fails</span>
               </li>
-              <li className="flex gap-2">
-                <span className="text-primary">•</span>
-                <span>To score the content of what you said, we separately send OpenAI the text transcript of your pitch. For live recordings, only the transcript is sent. On the upload fallback, we send OpenAI the audio track of your recording (never the video) so it can transcribe it first</span>
-              </li>
             </ul>
           </section>
 
@@ -148,24 +144,6 @@ export default function PrivacyPolicyPage() {
                     rel="noopener noreferrer"
                   >
                     Interhuman&apos;s Privacy Policy
-                  </a>.
-                </div>
-              </li>
-              <li className="flex gap-2">
-                <span className="text-primary font-bold">•</span>
-                <div>
-                  <strong className="text-foreground">OpenAI</strong> — Scores the content
-                  of your pitch (what you said, not how you said it) from the text
-                  transcript of your recording. On the upload fallback, OpenAI also
-                  transcribes the audio track (never the video) to produce that
-                  transcript. See{" "}
-                  <a
-                    href="https://openai.com/policies/privacy-policy"
-                    className="text-primary hover:underline"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    OpenAI&apos;s Privacy Policy
                   </a>.
                 </div>
               </li>
@@ -278,7 +256,7 @@ export default function PrivacyPolicyPage() {
             <h2 className="text-xl font-semibold mb-3">Automated Scoring</h2>
             <p className="text-muted-foreground leading-relaxed">
               The scores and feedback you receive are generated automatically from the
-              Interhuman and OpenAI analysis described above. The Interhuman analysis
+              Interhuman analysis described above. The Interhuman analysis
               infers behavioural and social signals — such as confidence, hesitation,
               stress, or engagement — from your facial expressions, body language and
               voice, so it works like an emotion-recognition system and you are being
