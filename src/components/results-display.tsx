@@ -82,24 +82,14 @@ export function ResultsDisplay({
         videoBlob={videoBlob}
       />
 
-      {/* Content / transcript analysis */}
-      {hasContentScore && pitchScore.content ? (
+      {/* Content / transcript analysis — only shown when a content score exists
+          (it's off when no content-scoring provider is configured). */}
+      {hasContentScore && pitchScore.content && (
         <ContentBreakdown
           content={pitchScore.content}
           composite={pitchScore.composite}
           deliveryComposite={pitchScore.deliveryComposite}
         />
-      ) : (
-        <div className="flex items-start gap-3 p-4 bg-muted/50 border rounded-lg max-w-2xl mx-auto">
-          <AlertCircle className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
-          <div className="text-sm">
-            <p className="font-medium">Content analysis unavailable</p>
-            <p className="text-muted-foreground mt-1">
-              We couldn&apos;t transcribe and score what you said for this pitch.
-              Showing delivery analysis only.
-            </p>
-          </div>
-        </div>
       )}
 
       <div className="flex justify-center gap-4 pt-4">

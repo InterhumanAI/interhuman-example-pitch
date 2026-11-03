@@ -21,8 +21,7 @@ interface ConsentGateProps {
 
 /**
  * Blocks camera/recording UI until the user explicitly consents to having
- * their video and audio processed for pitch analysis by Interhuman AI, the
- * resulting text transcript sent to OpenAI for content scoring, and the
+ * their video and audio processed for pitch analysis by Interhuman AI, and the
  * recording used under Interhuman's Model Improvement Program (always on for
  * this app, not user-toggleable). Required before any getUserMedia()/recording
  * call — see src/lib/consent.ts for storage details.
@@ -106,9 +105,9 @@ export function ConsentGate({ children, className }: ConsentGateProps) {
                   Interhuman AI
                 </a>{" "}
                 is an emotion-recognition system: it analyzes your video and audio
-                to estimate behavioral signals like confidence and stress. OpenAI
-                scores your transcript. This app doesn&apos;t store your recording —
-                only the transcript, scores, and feedback.
+                to estimate behavioral signals like confidence and stress. This app
+                doesn&apos;t store your recording — only the transcript, scores, and
+                feedback.
               </span>
             </div>
             <div className="flex gap-2">
