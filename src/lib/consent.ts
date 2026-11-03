@@ -5,8 +5,8 @@
  *
  * Recording a pitch sends video/audio to Interhuman AI for behavioral
  * analysis (streamed live, or uploaded and deleted after analysis as a
- * fallback) and the resulting text transcript to OpenAI for content
- * scoring, and — always, for this deployment — data is used under
+ * fallback) and the transcript to OpenAI for content scoring (on the upload
+ * fallback, OpenAI receives the audio track to transcribe it first), and — always, for this deployment — data is used under
  * Interhuman's Model Improvement Program (MIP) to help train their models.
  * These are third-party processing purposes the user must be informed of and
  * explicitly agree to before we ever touch the camera/microphone.
@@ -22,7 +22,7 @@
 const CONSENT_STORAGE_KEY = "thepitchpractice_consent";
 
 /** Bump this whenever the disclosure text in <ConsentGate> materially changes. */
-export const CONSENT_VERSION = 7;
+export const CONSENT_VERSION = 8;
 
 export interface ConsentRecord {
   version: number;

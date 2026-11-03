@@ -75,7 +75,7 @@ export default function PrivacyPolicyPage() {
               </li>
               <li className="flex gap-2">
                 <span className="text-primary">•</span>
-                <span>When your pitch is transcribed, the text transcript (not your audio or video) is separately sent to OpenAI to score the content of what you said</span>
+                <span>To score the content of what you said, we separately send OpenAI the text transcript of your pitch. For live recordings, only the transcript is sent. On the upload fallback, we send OpenAI the audio track of your recording (never the video) so it can transcribe it first</span>
               </li>
             </ul>
           </section>
@@ -156,7 +156,9 @@ export default function PrivacyPolicyPage() {
                 <div>
                   <strong className="text-foreground">OpenAI</strong> — Scores the content
                   of your pitch (what you said, not how you said it) from the text
-                  transcript of your recording. See{" "}
+                  transcript of your recording. On the upload fallback, OpenAI also
+                  transcribes the audio track (never the video) to produce that
+                  transcript. See{" "}
                   <a
                     href="https://openai.com/policies/privacy-policy"
                     className="text-primary hover:underline"
