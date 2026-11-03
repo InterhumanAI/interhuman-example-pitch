@@ -1,6 +1,14 @@
 import "server-only";
 
-const OPENAI_BASE = "https://api.openai.com/v1";
+/**
+ * OpenAI API base URL. Defaults to the global endpoint. Set OPENAI_BASE_URL to
+ * `https://eu.api.openai.com/v1` to keep requests in the EU — this requires an
+ * API key from an OpenAI project created with EU data residency, so swap
+ * OPENAI_API_KEY at the same time or requests will be rejected.
+ */
+const OPENAI_BASE = (
+  process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1"
+).replace(/\/+$/, "");
 
 export function getOpenAIKey(): string | null {
   return process.env.OPENAI_API_KEY ?? null;
